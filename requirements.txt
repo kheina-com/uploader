@@ -1,0 +1,8 @@
+git+https://github.com/kheina/kh-common.git@backblaze-and-sql-interfaces#egg=kh_common>=0.3.0
+aiofiles>=0.5.0
+psycopg2-binary>=2.8.5
+starlette>=0.13.6
+ujson>=3.0.0
+aiohttp>=3.6.2
+uvicorn>=0.11.6
+gunicorn>=20.0.4
