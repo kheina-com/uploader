@@ -12,7 +12,7 @@ class Uploader(SqlInterface, B2Interface) :
 		SqlInterface.__init__(self)
 		B2Interface.__init__(self)
 		self.logger = getLogger('upload-tool')
-		self.authorize_b2()
+		self.b2_authorize()
 
 
 	def createPost(self, uploader_user_id) :
@@ -28,14 +28,16 @@ class Uploader(SqlInterface, B2Interface) :
 			fetch_one=True,
 		)
 		return {
-			'post_id': post_id,
+			'post_id': data[0],
 			'user_id': uploader_user_id,
 		}
 
 
-	def uploadFileToPost(self, file_data, post_id) :
-		filename = f'{post_id}/heck.png'
-		self.b2_upload(file_data, 'image/png', filename)
+	def uploadFileToPost(self, file_data, filename, post_id) :
+		filename = f'{post_id}/{filename}'
+		self.b2_upload(file_data, filename)
+
+		# render all thumbnails and queue them for upload async
 
 
 	def updatePostMetadata(self, metadata) :
