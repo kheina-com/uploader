@@ -63,13 +63,17 @@ class Uploader(SqlInterface, B2Interface) :
 
 		url = f'{post_id}/{filename}'
 
+		# load the image first so we can verify it's not corrupt, etc
+		image = Image.open(BytesIO(file_data))
+
 		# upload the raw file
 		self.b2_upload(file_data, url, content_type=content_type)
 
 		# render all thumbnails and queue them for upload async
-		image = Image.open(BytesIO(file_data))
-		image = image.convert('RGB')
+		background = Image.new('RGBA', image.size, (255,255,255))
+		image = Image.alpha_composite(background, image)
 		long_side = 0 if image.size[0] > image.size[1] else 1
+		del background
 
 		thumbnails = {}
 
