@@ -4,6 +4,7 @@ from kh_common import getFullyQualifiedClassName
 from kh_common.backblaze import B2Interface
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
+from typing import List
 from io import BytesIO
 from math import floor
 from PIL import Image
@@ -24,7 +25,7 @@ class Uploader(SqlInterface, B2Interface) :
 		]
 
 
-	def createPost(self, uploader_user_id) :
+	def createPost(self, uploader_user_id: int) :
 		data = self.query("""
 			INSERT INTO kheina.public.posts
 			(uploader)
@@ -42,31 +43,84 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def uploadImageToPost(self, file_data, filename, post_id) :
+	def uploadImageToPost(self, post_id: str, user_id: int, file_data: bytes, filename: str) :
+		content_type = self._get_mime_from_filename(filename)
+
 		# upload the raw file
-		self.b2_upload(file_data, f'{post_id}/{filename}')
+		self.b2_upload(file_data, f'{post_id}/{filename}', content_type=content_type)
+
+		self.query("""
+			UPDATE kheina.public.posts
+			SET updated_on = NOW(),
+				media_type_id = media_mime_type_to_id(%s),
+				filename = %s
+			WHERE post_id = %s and uploader = %s;
+			""",
+			(
+				content_type,
+				filename,
+				post_id, user_id,
+			),
+			commit=True,
+		)
 
 		# render all thumbnails and queue them for upload async
-		image = Image(BytesIO(file_data))
+		image = Image.open(BytesIO(file_data))
 		image = image.convert('RGB')
 		long_side = 0 if image.size[0] > image.size[1] else 1
 
 		thumbnail_data = None
+		max_size = False
 		for size in self.thumbnail_sizes :
 			ratio = size / image.size[long_side]
 			if ratio < 1 :
 				# resize and output
 				thumbnail_data = BytesIO()
-				output_size = (floor(image.size[0]) * ratio, size) if long_side else (size, floor(image.size[1]) * ratio)
+				output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
 				thumbnail = image.resize(output_size, resample=Image.BICUBIC).save(thumbnail_data, format='JPEG', quality=60)
 
-			elif not thumbnail_data :
+			elif not thumbnail_data and not max_size :
 				# just convert what we have
 				thumbnail_data = BytesIO()
 				thumbnail = image.save(thumbnail_data, format='JPEG', quality=60)
+				max_size = True
 
-			self.b2_upload(thumbnail_data, f'{post_id}/thumbnails/{size}.jpg')
+			self.b2_upload(thumbnail_data.getvalue(), f'{post_id}/thumbnails/{size}.jpg')
 
 
-	def updatePostMetadata(self, metadata) :
-		pass
+	def updatePostMetadata(self, post_id: str, user_id: int, privacy:str=None, title:str=None, description:str=None, tags:List[str]=None) :
+		query = """
+			UPDATE kheina.public.posts
+			SET updated_on = NOW()
+			"""
+
+		params = []
+
+		if privacy :
+			query += """,
+			privacy_id = privacy_to_id(%s)"""
+			params.append(privacy)
+
+		if title :
+			query += """,
+			title = %s"""
+			params.append(title)
+
+		if description :
+			query += """,
+			description = %s"""
+			params.append(description)
+
+		data = self.query(
+			query + "WHERE post_id = %s and uploader = %s;",
+			params + [post_id, user_id],
+			commit=True,
+		)
+
+		if isinstance(tags, list) :
+			self.query("""
+				CALL add_tags(%s, %s, %s);
+				""",
+				(post_id, user_id, tags),
+				commit=True,
+			)
