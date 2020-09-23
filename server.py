@@ -24,7 +24,7 @@ async def v1CreatePost(req) :
 		)
 
 	except :
-		return jsonErrorHandler(req, logger)
+		return jsonErrorHandler(req)
 
 
 async def v1UploadImage(req) :
@@ -47,7 +47,7 @@ async def v1UploadImage(req) :
 		)
 
 	except :
-		return jsonErrorHandler(req, logger)
+		return jsonErrorHandler(req)
 
 
 async def v1UpdatePost(req) :
@@ -72,7 +72,7 @@ async def v1UpdatePost(req) :
 			raise BadRequest('no post id provided.')
 
 	except :
-		return jsonErrorHandler(req, logger)
+		return jsonErrorHandler(req)
 
 
 async def v1Help(req) :

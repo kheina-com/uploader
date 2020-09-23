@@ -114,10 +114,7 @@ class Uploader(SqlInterface, B2Interface) :
 			}
 
 			# upload the raw file
-			file_data = BytesIO()
-			image.save(file_data, format='JPEG', quality=60)
-			self.b2_upload(file_data.getvalue(), url, content_type=content_type)
-			del file_data
+			self.b2_upload(file.read(), url, content_type=content_type)
 
 			# render all thumbnails and queue them for upload async
 			if image.mode != 'RGB' :
