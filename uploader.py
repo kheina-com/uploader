@@ -52,7 +52,7 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def uploadImage(self, user_id: int, file: BinaryIO, filename: str) -> Dict[str, Union[str, int, List[str]]] :
+	def uploadImage(self, user_id: int, file: BinaryIO, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
 		# load the image first so we can verify it's not corrupt, etc
 		image = Image.open(file)
 
@@ -64,7 +64,6 @@ class Uploader(SqlInterface, B2Interface) :
 			logdata = {
 				'refid': refid,
 				'user_id': user_id,
-				'post_id': post_id,
 				'filename': filename,
 				'error': str(e),
 			}
@@ -75,10 +74,11 @@ class Uploader(SqlInterface, B2Interface) :
 
 		try :
 			self.query("""
-				CALL kheina.public.user_upload_file(%s, %s, %s);
+				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
 				""",
 				(
 					user_id,
+					post_id, 
 					content_type,
 					filename,
 				),

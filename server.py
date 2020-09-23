@@ -20,11 +20,8 @@ async def v1CreatePost(req) :
 		token_data = retrieveTokenData(req)
 
 		return UJSONResponse(
-			uploader.createPost(token_data['user_id'])
+			uploader.createPost(token_data['data']['user_id'])
 		)
-
-		else :
-			raise BadRequest('no user id provided.')
 
 	except :
 		return jsonErrorHandler(req, logger)
@@ -33,7 +30,7 @@ async def v1CreatePost(req) :
 async def v1UploadImage(req) :
 	"""
 	FORMDATA: {
-		"post_id": str,
+		"post_id": Optional[str],
 		"file": image file,
 	}
 	"""
@@ -43,9 +40,10 @@ async def v1UploadImage(req) :
 		
 		file_obj = requestFormdata['file'].file
 		filename = requestFormdata['file'].filename
+		post_id = requestFormdata.get('post_id')
 
 		return UJSONResponse(
-			uploader.uploadImageToPost(token_data['user_id'], file_obj, filename)
+			uploader.uploadImage(token_data['data']['user_id'], file_obj, filename, post_id=post_id)
 		)
 
 	except :
@@ -67,11 +65,11 @@ async def v1UpdatePost(req) :
 
 		if 'post_id' in requestJson :
 			return UJSONResponse(
-				uploader.updatePostMetadata(token_data['user_id'], **requestJson)
+				uploader.updatePostMetadata(token_data['data']['user_id'], **requestJson)
 			)
 
 		else :
-			raise BadRequest('no user id provided.')
+			raise BadRequest('no post id provided.')
 
 	except :
 		return jsonErrorHandler(req, logger)
@@ -91,6 +89,7 @@ async def v1Help(req) :
 				'user_id': 'int',
 			},
 			'file': 'image',
+			'post_id': 'Optional[str]',
 		},
 		'/v1/update_post': {
 			'auth': {
