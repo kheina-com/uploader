@@ -70,10 +70,10 @@ class Uploader(SqlInterface, B2Interface) :
 			self.logger.warning(logdata)
 			raise BadRequest('user image failed validation.', logdata=logdata)
 
-		content_type = self._get_mime_from_filename(image.format.lower())
+		content_type: str = self._get_mime_from_filename(image.format.lower())
 
 		try :
-			self.query("""
+			data: List[str] = self.query("""
 				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
 				""",
 				(
@@ -83,7 +83,10 @@ class Uploader(SqlInterface, B2Interface) :
 					filename,
 				),
 				commit=True,
+				fetch_one=True,
 			)
+
+			post_id = data[0]
 
 		except :
 			refid: str = uuid4().hex
@@ -111,7 +114,10 @@ class Uploader(SqlInterface, B2Interface) :
 			}
 
 			# upload the raw file
-			self.b2_upload(file_data, url, content_type=content_type)
+			file_data = BytesIO()
+			image.save(file_data, format='JPEG', quality=60)
+			self.b2_upload(file_data.getvalue(), url, content_type=content_type)
+			del file_data
 
 			# render all thumbnails and queue them for upload async
 			if image.mode != 'RGB' :
