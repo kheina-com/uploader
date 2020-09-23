@@ -1,9 +1,9 @@
 from kh_common.exceptions.http_error import BadRequest, InternalServerError
 from kh_common.config.repo import name, short_hash
-from typing import BinaryIO, Dict, List, Union
 from kh_common.backblaze import B2Interface
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
+from typing import Dict, List, Union
 from io import BytesIO
 from math import floor
 from uuid import uuid4
@@ -52,9 +52,9 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def uploadImage(self, user_id: int, file: BinaryIO, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
+	def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
 		# load the image first so we can verify it's not corrupt, etc
-		image = Image.open(file)
+		image = Image.open(BytesIO(file_data))
 
 		try :
 			image.verify()
@@ -114,7 +114,7 @@ class Uploader(SqlInterface, B2Interface) :
 			}
 
 			# upload the raw file
-			self.b2_upload(file.read(), url, content_type=content_type)
+			self.b2_upload(file_data, url, content_type=content_type)
 
 			# render all thumbnails and queue them for upload async
 			if image.mode != 'RGB' :
