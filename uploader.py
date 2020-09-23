@@ -53,11 +53,9 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
-		# load the image first so we can verify it's not corrupt, etc
-		image = Image.open(BytesIO(file_data))
-
 		try :
-			image.verify()
+			# we can't just open this one cause PIL sucks
+			Image.open(BytesIO(file_data)).verify()
 		
 		except Exception as e :
 			refid: str = uuid4().hex
@@ -70,6 +68,7 @@ class Uploader(SqlInterface, B2Interface) :
 			self.logger.warning(logdata)
 			raise BadRequest('user image failed validation.', logdata=logdata)
 
+		image = Image.open(BytesIO(file_data))
 		content_type: str = self._get_mime_from_filename(image.format.lower())
 
 		try :

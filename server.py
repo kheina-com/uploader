@@ -38,12 +38,12 @@ async def v1UploadImage(req) :
 		token_data = retrieveTokenData(req)
 		requestFormdata = await req.form()
 		
-		file_obj = requestFormdata['file'].file
+		file_data = requestFormdata['file'].file.read()
 		filename = requestFormdata['file'].filename
 		post_id = requestFormdata.get('post_id')
 
 		return UJSONResponse(
-			uploader.uploadImage(token_data['data']['user_id'], file_obj.read(), filename, post_id=post_id)
+			uploader.uploadImage(token_data['data']['user_id'], file_data, filename, post_id=post_id)
 		)
 
 	except :
