@@ -1,6 +1,7 @@
 from kh_common.exceptions.http_error import BadRequest
 from kh_common.exceptions import jsonErrorHandler
 from starlette.responses import UJSONResponse
+from kh_common.auth import retrieveTokenData
 from traceback import format_tb
 from kh_common import logging
 from uploader import Uploader
@@ -13,19 +14,14 @@ uploader = Uploader()
 
 async def v1CreatePost(req) :
 	"""
-	{
-		"version": Optional[str],
-		"algorithm": Optional[str],
-		"key_id": int
-	}
+	only auth required
 	"""
 	try :
-		requestJson = await req.json()
+		token_data = retrieveTokenData(req)
 
-		if 'user_id' in requestJson :
-			return UJSONResponse(
-				uploader.createPost(requestJson['user_id'])
-			)
+		return UJSONResponse(
+			uploader.createPost(token_data['user_id'])
+		)
 
 		else :
 			raise BadRequest('no user id provided.')
@@ -38,21 +34,18 @@ async def v1UploadImage(req) :
 	"""
 	FORMDATA: {
 		"post_id": str,
-		"user_id": int,
-		"file_data": bytes,
-		"filename": str
+		"file": image file,
 	}
 	"""
 	try :
+		token_data = retrieveTokenData(req)
 		requestFormdata = await req.form()
 		
 		file_obj = requestFormdata['file'].file
 		filename = requestFormdata['file'].filename
-		post_id = requestFormdata['post_id']
-		user_id = requestFormdata['user_id']
 
 		return UJSONResponse(
-			uploader.uploadImageToPost(post_id, user_id, file_obj, filename)
+			uploader.uploadImageToPost(token_data['user_id'], file_obj, filename)
 		)
 
 	except :
@@ -63,18 +56,18 @@ async def v1UpdatePost(req) :
 	"""
 	{
 		"post_id": str,
-		"user_id": int,
 		"privacy": Optional[str],
 		"title": Optional[str],
 		"description": Optional[str]
 	}
 	"""
 	try :
+		token_data = retrieveTokenData(req)
 		requestJson = await req.json()
 
-		if 'post_id' in requestJson and 'user_id' in requestJson :
+		if 'post_id' in requestJson :
 			return UJSONResponse(
-				uploader.updatePostMetadata(**requestJson)
+				uploader.updatePostMetadata(token_data['user_id'], **requestJson)
 			)
 
 		else :
@@ -87,17 +80,23 @@ async def v1UpdatePost(req) :
 async def v1Help(req) :
 	return UJSONResponse({
 		'/v1/create_post': {
-			'user_id': 'int',
+			'auth': {
+				'required': True,
+				'user_id': 'int',
+			},
 		},
 		'/v1/upload_image': {
-			'post_id': 'str',
-			'user_id': 'int',
-			'file_data': 'bytes',
-			'filename': 'str',
+			'auth': {
+				'required': True,
+				'user_id': 'int',
+			},
+			'file': 'image',
 		},
 		'/v1/update_post': {
-			'post_id': 'str',
-			'user_id': 'int',
+			'auth': {
+				'required': True,
+				'user_id': 'int',
+			},
 			'privacy': 'Optional[str]',
 			'title': 'Optional[str]',
 			'description': 'Optional[str]',

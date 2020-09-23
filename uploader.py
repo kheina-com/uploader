@@ -30,11 +30,7 @@ class Uploader(SqlInterface, B2Interface) :
 	def createPost(self, user_id: int) -> Dict[str, Union[str, int]] :
 		try :
 			data: List[str] = self.query("""
-				INSERT INTO kheina.public.posts
-				(uploader)
-				VALUES
-				(%s)
-				RETURNING post_id;
+				SELECT kheina.public.create_new_post(%s);
 				""",
 				(user_id,),
 				commit=True,
@@ -56,15 +52,15 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def uploadImageToPost(self, post_id: str, user_id: int, file: BinaryIO, filename: str) -> Dict[str, Union[str, int, List[str]]] :
+	def uploadImage(self, user_id: int, file: BinaryIO, filename: str) -> Dict[str, Union[str, int, List[str]]] :
 		# load the image first so we can verify it's not corrupt, etc
-		image = Image.open(BytesIO(file_data))
+		image = Image.open(file)
 
 		try :
 			image.verify()
 		
 		except Exception as e :
-			refid = uuid4().hex
+			refid: str = uuid4().hex
 			logdata = {
 				'refid': refid,
 				'user_id': user_id,
@@ -79,22 +75,18 @@ class Uploader(SqlInterface, B2Interface) :
 
 		try :
 			self.query("""
-				UPDATE kheina.public.posts
-				SET updated_on = NOW(),
-					media_type_id = media_mime_type_to_id(%s),
-					filename = %s
-				WHERE post_id = %s and uploader = %s;
+				CALL kheina.public.user_upload_file(%s, %s, %s);
 				""",
 				(
+					user_id,
 					content_type,
 					filename,
-					post_id, user_id,
 				),
 				commit=True,
 			)
 
 		except :
-			refid = uuid4().hex
+			refid: str = uuid4().hex
 			logdata = {
 				'refid': refid,
 				'user_id': user_id,
@@ -139,6 +131,7 @@ class Uploader(SqlInterface, B2Interface) :
 				logdata['image'] = f'thumbnail {size}'
 				logdata['url'] = thumbnail_url
 				ratio = size / image.size[long_side]
+
 				if ratio < 1 :
 					# resize and output
 					thumbnail_data = BytesIO()
@@ -155,7 +148,7 @@ class Uploader(SqlInterface, B2Interface) :
 				thumbnails[size] = thumbnail_url
 
 		except :
-			logdata['refid'] = uuid4().hex
+			logdata['refid']: str = uuid4().hex
 			self.logger.exception(logdata)
 			raise InternalServerError('an error occurred while uploading an image to backblaze.', logdata=logdata)
 
@@ -167,7 +160,7 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def updatePostMetadata(self, post_id: str, user_id: int, privacy:str=None, title:str=None, description:str=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
+	def updatePostMetadata(self, user_id: int, post_id: str, privacy:str=None, title:str=None, description:str=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
 		query = """
 			UPDATE kheina.public.posts
 			SET updated_on = NOW()
