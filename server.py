@@ -34,7 +34,7 @@ async def v1UploadImage(req, token_data={ }) :
 	"""
 	requestFormdata = await req.form()
 
-	if 'file' not in requestJson :
+	if 'file' not in requestFormdata :
 		raise BadRequest('no file provided.')
 
 	file_data = requestFormdata['file'].file
