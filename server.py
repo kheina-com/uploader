@@ -1,7 +1,7 @@
 from kh_common.exceptions.http_error import BadRequest
 from kh_common.exceptions import jsonErrorHandler
 from starlette.responses import UJSONResponse
-from kh_common.auth import retrieveTokenData
+from kh_common.auth import AuthenticatedAsync
 from kh_common.logging import getLogger
 from traceback import format_tb
 from uploader import Uploader
@@ -12,7 +12,7 @@ logger = getLogger()
 uploader = Uploader()
 
 
-@Authenticated()
+@AuthenticatedAsync()
 async def v1CreatePost(req, token_data={ }) :
 	"""
 	only auth required
@@ -26,7 +26,7 @@ async def v1CreatePost(req, token_data={ }) :
 		return jsonErrorHandler(req)
 
 
-@Authenticated()
+@AuthenticatedAsync()
 async def v1UploadImage(req, token_data={ }) :
 	"""
 	FORMDATA: {
@@ -49,7 +49,7 @@ async def v1UploadImage(req, token_data={ }) :
 		return jsonErrorHandler(req)
 
 
-@Authenticated()
+@AuthenticatedAsync()
 async def v1UpdatePost(req, token_data={ }) :
 	"""
 	{
