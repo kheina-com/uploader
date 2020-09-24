@@ -52,7 +52,7 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
+	async def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
 		try :
 			# we can't just open this one cause PIL sucks
 			Image.open(BytesIO(file_data)).verify()
@@ -112,7 +112,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 		try :
 			# upload the raw file
-			self.b2_upload(file_data, url, content_type=content_type)
+			await self.b2_upload_async(file_data, url, content_type=content_type)
 
 			# render all thumbnails and queue them for upload async
 			if image.mode != 'RGB' :
@@ -145,7 +145,7 @@ class Uploader(SqlInterface, B2Interface) :
 					thumbnail = image.save(thumbnail_data, format='JPEG', quality=60)
 					max_size = True
 
-				self.b2_upload(thumbnail_data.getvalue(), thumbnail_url)
+				await self.b2_upload_async(thumbnail_data.getvalue(), thumbnail_url)
 				thumbnails[size] = thumbnail_url
 
 		except :
