@@ -2,13 +2,13 @@ from kh_common.exceptions.http_error import BadRequest
 from kh_common.exceptions import jsonErrorHandler
 from starlette.responses import UJSONResponse
 from kh_common.auth import retrieveTokenData
+from kh_common.logging import getLogger
 from traceback import format_tb
-from kh_common import logging
 from uploader import Uploader
 import time
 
 
-logger = logging.getLogger('upload-tool-server')
+logger = getLogger()
 uploader = Uploader()
 
 
@@ -38,12 +38,12 @@ async def v1UploadImage(req) :
 		token_data = retrieveTokenData(req)
 		requestFormdata = await req.form()
 		
-		file_data = requestFormdata['file'].file.read()
+		file_data = requestFormdata['file'].file
 		filename = requestFormdata['file'].filename
 		post_id = requestFormdata.get('post_id')
 
 		return UJSONResponse(
-			uploader.uploadImage(token_data['data']['user_id'], file_data, filename, post_id=post_id)
+			uploader.uploadImage(token_data['data']['user_id'], file_data.read(), filename, post_id=post_id)
 		)
 
 	except :

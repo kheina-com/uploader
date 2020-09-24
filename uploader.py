@@ -15,7 +15,7 @@ class Uploader(SqlInterface, B2Interface) :
 	def __init__(self) -> None :
 		SqlInterface.__init__(self)
 		B2Interface.__init__(self, max_retries=100)
-		self.logger = getLogger(f'{name}.{short_hash}')
+		self.logger = getLogger()
 		self.thumbnail_sizes: List[int] = [
 			# the length of the longest side, in pixels
 			100,
@@ -99,19 +99,18 @@ class Uploader(SqlInterface, B2Interface) :
 			raise InternalServerError('an error occurred while updating post metadata.', logdata=logdata)
 
 		url = f'{post_id}/{filename}'
+		logdata = {
+			'user_id': user_id,
+			'post_id': post_id,
+			'url': url,
+			'filename': filename,
+			'image': 'full size',
+			'color': image.mode,
+			'type': image.format,
+			'animated': getattr(image, 'is_animated', False),
+		}
 
 		try :
-			logdata = {
-				'user_id': user_id,
-				'post_id': post_id,
-				'url': url,
-				'filename': filename,
-				'image': 'full size',
-				'color': image.mode,
-				'type': image.format,
-				'animated': image.is_animated,
-			}
-
 			# upload the raw file
 			self.b2_upload(file_data, url, content_type=content_type)
 
