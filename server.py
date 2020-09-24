@@ -12,13 +12,12 @@ logger = getLogger()
 uploader = Uploader()
 
 
-async def v1CreatePost(req) :
+@Authenticated()
+async def v1CreatePost(req, token_data={ }) :
 	"""
 	only auth required
 	"""
 	try :
-		token_data = retrieveTokenData(req)
-
 		return UJSONResponse(
 			uploader.createPost(token_data['data']['user_id'])
 		)
@@ -27,7 +26,8 @@ async def v1CreatePost(req) :
 		return jsonErrorHandler(req)
 
 
-async def v1UploadImage(req) :
+@Authenticated()
+async def v1UploadImage(req, token_data={ }) :
 	"""
 	FORMDATA: {
 		"post_id": Optional[str],
@@ -35,7 +35,6 @@ async def v1UploadImage(req) :
 	}
 	"""
 	try :
-		token_data = retrieveTokenData(req)
 		requestFormdata = await req.form()
 		
 		file_data = requestFormdata['file'].file
@@ -50,7 +49,8 @@ async def v1UploadImage(req) :
 		return jsonErrorHandler(req)
 
 
-async def v1UpdatePost(req) :
+@Authenticated()
+async def v1UpdatePost(req, token_data={ }) :
 	"""
 	{
 		"post_id": str,
@@ -60,7 +60,6 @@ async def v1UpdatePost(req) :
 	}
 	"""
 	try :
-		token_data = retrieveTokenData(req)
 		requestJson = await req.json()
 
 		if 'post_id' in requestJson :

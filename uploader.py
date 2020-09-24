@@ -71,6 +71,9 @@ class Uploader(SqlInterface, B2Interface) :
 		image = Image.open(BytesIO(file_data))
 		content_type: str = self._get_mime_from_filename(image.format.lower())
 
+		if content_type != self._get_mime_from_filename(filename) :
+			raise BadRequest('file extension does not match file type.')
+
 		try :
 			data: List[str] = self.query("""
 				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
@@ -145,7 +148,7 @@ class Uploader(SqlInterface, B2Interface) :
 					thumbnail = image.save(thumbnail_data, format='JPEG', quality=60)
 					max_size = True
 
-				await self.b2_upload_async(thumbnail_data.getvalue(), thumbnail_url)
+				await self.b2_upload_async(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])
 				thumbnails[size] = thumbnail_url
 
 		except :
