@@ -1,5 +1,5 @@
 from kh_common.exceptions.http_error import BadRequest
-from kh_common.exceptions import jsonErrorHandler
+from kh_common.exceptions import JsonErrorHandler
 from starlette.responses import UJSONResponse
 from kh_common.auth import AuthenticatedAsync
 from kh_common.logging import getLogger
@@ -12,20 +12,18 @@ logger = getLogger()
 uploader = Uploader()
 
 
+@JsonErrorHandler()
 @AuthenticatedAsync()
 async def v1CreatePost(req, token_data={ }) :
 	"""
 	only auth required
 	"""
-	try :
-		return UJSONResponse(
-			uploader.createPost(token_data['data']['user_id'])
-		)
-
-	except :
-		return jsonErrorHandler(req)
+	return UJSONResponse(
+		uploader.createPost(token_data['data']['user_id'])
+	)
 
 
+@JsonErrorHandler()
 @AuthenticatedAsync()
 async def v1UploadImage(req, token_data={ }) :
 	"""
@@ -34,21 +32,21 @@ async def v1UploadImage(req, token_data={ }) :
 		"file": image file,
 	}
 	"""
-	try :
-		requestFormdata = await req.form()
-		
-		file_data = requestFormdata['file'].file
-		filename = requestFormdata['file'].filename
-		post_id = requestFormdata.get('post_id')
+	requestFormdata = await req.form()
 
-		return UJSONResponse(
-			await uploader.uploadImage(token_data['data']['user_id'], file_data.read(), filename, post_id=post_id)
-		)
+	if 'file' not in requestJson :
+		raise BadRequest('no file provided.')
 
-	except :
-		return jsonErrorHandler(req)
+	file_data = requestFormdata['file'].file
+	filename = requestFormdata['file'].filename
+	post_id = requestFormdata.get('post_id')
+
+	return UJSONResponse(
+		await uploader.uploadImage(token_data['data']['user_id'], file_data.read(), filename, post_id=post_id)
+	)
 
 
+@JsonErrorHandler()
 @AuthenticatedAsync()
 async def v1UpdatePost(req, token_data={ }) :
 	"""
@@ -59,19 +57,14 @@ async def v1UpdatePost(req, token_data={ }) :
 		"description": Optional[str]
 	}
 	"""
-	try :
-		requestJson = await req.json()
+	requestJson = await req.json()
 
-		if 'post_id' in requestJson :
-			return UJSONResponse(
-				uploader.updatePostMetadata(token_data['data']['user_id'], **requestJson)
-			)
+	if 'post_id' not in requestJson :
+		raise BadRequest('no post id provided.')
 
-		else :
-			raise BadRequest('no post id provided.')
-
-	except :
-		return jsonErrorHandler(req)
+	return UJSONResponse(
+		uploader.updatePostMetadata(token_data['data']['user_id'], **requestJson)
+	)
 
 
 async def v1Help(req) :
