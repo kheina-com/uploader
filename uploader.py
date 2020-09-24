@@ -15,7 +15,6 @@ class Uploader(SqlInterface, B2Interface) :
 	def __init__(self) -> None :
 		SqlInterface.__init__(self)
 		B2Interface.__init__(self, max_retries=100)
-		self.logger = getLogger()
 		self.thumbnail_sizes: List[int] = [
 			# the length of the longest side, in pixels
 			100,

@@ -106,7 +106,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.routing import Route, Mount
 
 middleware = [
-	# Middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts),
+	Middleware(TrustedHostMiddleware, allowed_hosts={ '127.0.0.1:5001', 'upload.kheina.com', 'upload-dev.kheina.com' }),
 ]
 
 routes = [
