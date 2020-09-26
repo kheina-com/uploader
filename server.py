@@ -1,8 +1,11 @@
 from kh_common.exceptions.http_error import BadRequest
-from kh_common.exceptions import JsonErrorHandler
+from kh_common.auth import authenticated, TokenData
+from kh_common.exceptions import jsonErrorHandler
+from models import PrivacyRequest, UpdateRequest
+from kh_common.validation import validatedJson
 from starlette.responses import UJSONResponse
-from kh_common.auth import AuthenticatedAsync
 from kh_common.logging import getLogger
+from starlette.requests import Request
 from traceback import format_tb
 from uploader import Uploader
 import time
@@ -12,20 +15,21 @@ logger = getLogger()
 uploader = Uploader()
 
 
-@JsonErrorHandler()
-@AuthenticatedAsync()
-async def v1CreatePost(req, token_data={ }) :
+@jsonErrorHandler
+@authenticated
+async def v1CreatePost(req: Request, token_data:TokenData=None) :
 	"""
 	only auth required
 	"""
+
 	return UJSONResponse(
-		uploader.createPost(token_data['data']['user_id'])
+		uploader.createPost(token_data.data['user_id'])
 	)
 
 
-@JsonErrorHandler()
-@AuthenticatedAsync()
-async def v1UploadImage(req, token_data={ }) :
+@jsonErrorHandler
+@authenticated
+async def v1UploadImage(req: Request, token_data:TokenData=None) :
 	"""
 	FORMDATA: {
 		"post_id": Optional[str],
@@ -42,28 +46,40 @@ async def v1UploadImage(req, token_data={ }) :
 	post_id = requestFormdata.get('post_id')
 
 	return UJSONResponse(
-		await uploader.uploadImage(token_data['data']['user_id'], file_data.read(), filename, post_id=post_id)
+		await uploader.uploadImage(token_data.data['user_id'], file_data.read(), filename, post_id=post_id)
 	)
 
 
-@JsonErrorHandler()
-@AuthenticatedAsync()
-async def v1UpdatePost(req, token_data={ }) :
+@jsonErrorHandler
+@authenticated
+@validatedJson
+async def v1UpdatePost(req: UpdateRequest, token_data:TokenData=None) :
 	"""
 	{
 		"post_id": str,
-		"privacy": Optional[str],
 		"title": Optional[str],
 		"description": Optional[str]
 	}
 	"""
-	requestJson = await req.json()
-
-	if 'post_id' not in requestJson :
-		raise BadRequest('no post id provided.')
 
 	return UJSONResponse(
-		uploader.updatePostMetadata(token_data['data']['user_id'], **requestJson)
+		uploader.updatePostMetadata(token_data.data['user_id'], **requestJson)
+	)
+
+
+@jsonErrorHandler
+@authenticated
+@validatedJson
+async def v1UpdatePrivacy(req: PrivacyRequest, token_data:TokenData=None) :
+	"""
+	{
+		"post_id": str,
+		"privacy": str
+	}
+	"""
+
+	return UJSONResponse(
+		uploader.updatePrivacy(token_data.data['user_id'], **requestJson)
 	)
 
 
@@ -88,9 +104,15 @@ async def v1Help(req) :
 				'required': True,
 				'user_id': 'int',
 			},
-			'privacy': 'Optional[str]',
 			'title': 'Optional[str]',
 			'description': 'Optional[str]',
+		},
+		'/v1/update_privacy': {
+			'auth': {
+				'required': True,
+				'user_id': 'int',
+			},
+			'privacy': 'str',
 		},
 	})
 
@@ -113,6 +135,7 @@ routes = [
 	Route('/v1/create_post', endpoint=v1CreatePost, methods=('POST',)),
 	Route('/v1/upload_image', endpoint=v1UploadImage, methods=('POST',)),
 	Route('/v1/update_post', endpoint=v1UpdatePost, methods=('POST',)),
+	Route('/v1/update_privacy', endpoint=v1UpdatePrivacy, methods=('POST',)),
 	Route('/v1/help', endpoint=v1Help, methods=('GET',)),
 ]
 

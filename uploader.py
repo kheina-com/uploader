@@ -1,12 +1,15 @@
-from kh_common.exceptions.http_error import BadRequest, InternalServerError
+from kh_common.scoring import confidence, controversial as calc_cont, hot as calc_hot
+from kh_common.exceptions.http_error import BadRequest, HttpError, InternalServerError
 from kh_common.config.repo import name, short_hash
 from kh_common.backblaze import B2Interface
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
 from typing import Dict, List, Union
+from models import Privacy
 from io import BytesIO
 from math import floor
 from uuid import uuid4
+from time import time
 from PIL import Image
 
 
@@ -24,6 +27,11 @@ class Uploader(SqlInterface, B2Interface) :
 			1200,
 		]
 		self.resample_function: int = Image.BICUBIC
+
+
+	def _validatePrivacy(self, privacy: Privacy) :
+		if privacy == Privacy.unpublished :
+			raise BadRequest('you cannot set a post to unpublished.')
 
 
 	def createPost(self, user_id: int) -> Dict[str, Union[str, int]] :
@@ -79,7 +87,7 @@ class Uploader(SqlInterface, B2Interface) :
 				""",
 				(
 					user_id,
-					post_id, 
+					post_id,
 					content_type,
 					filename,
 				),
@@ -163,7 +171,7 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def updatePostMetadata(self, user_id: int, post_id: str, privacy:str=None, title:str=None, description:str=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
+	def updatePostMetadata(self, user_id: int, post_id: str, title:str=None, description:str=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
 		query = """
 			UPDATE kheina.public.posts
 			SET updated_on = NOW()
@@ -171,12 +179,6 @@ class Uploader(SqlInterface, B2Interface) :
 
 		params = []
 		return_data = { }
-
-		if privacy :
-			query += """,
-			privacy_id = privacy_to_id(%s)"""
-			params.append(privacy)
-			return_data['privacy'] = None
 
 		if title :
 			query += """,
@@ -197,7 +199,6 @@ class Uploader(SqlInterface, B2Interface) :
 			data = self.query(
 				query + """
 				WHERE post_id = %s and uploader = %s;
-				RETURNING 
 				""",
 				params + [post_id, user_id],
 				commit=True,
@@ -209,7 +210,6 @@ class Uploader(SqlInterface, B2Interface) :
 				'refid': refid,
 				'user_id': user_id,
 				'post_id': post_id,
-				'privacy': privacy,
 				'title': title,
 				'description': description,
 			}
@@ -220,4 +220,87 @@ class Uploader(SqlInterface, B2Interface) :
 			'user_id': user_id,
 			'post_id': post_id,
 			'data': return_data,
+		}
+
+
+	def updatePrivacy(self, user_id: int, post_id: str, privacy: Privacy) :
+		self._validatePrivacy(privacy)
+
+		try :
+			with self.transaction() as transaction :
+				data = transaction.query("""
+					SELECT privacy.type
+					FROM kheina.public.posts
+						INNER JOIN kheina.public.privacy
+							ON posts.privacy_id = privacy.privacy_id
+					WHERE posts.owner = %s
+						AND posts.post_id = %s;
+					""",
+					(user_id, post_id),
+					fetch_one=True,
+				)
+
+				if not data :
+					raise BadRequest('the provided post does not exist or it does not belong to this account.')
+
+
+				if data[0] == 'unpublished' :
+					query = """
+						INSERT INTO kheina.public.post_votes
+						(user_id, post_id, upvote)
+						VALUES
+						(%s, %s, %s);
+
+						INSERT INTO kheina.public.post_scores
+						(post_id, upvotes, downvotes, top, hot, best, controversial)
+						VALUES
+						(%s, %s, %s, %s, %s, %s, %s);
+
+						UPDATE kheina.public.posts
+							SET created_on = NOW(),
+								updated_on = NOW(),
+								privacy_id = privacy_to_id(%s)
+						WHERE posts.owner = %s
+							AND posts.post_id = %s;
+					"""
+					params = (
+						user_id, post_id, True,
+						post_id, 1, 0, 1, calc_hot(1, 0, time()), confidence(1, 1), calc_cont(1, 0),
+						privacy.name, user_id, post_id,
+					)
+				
+				else :
+					query = """
+						UPDATE kheina.public.posts
+							SET created_on = NOW(),
+								updated_on = NOW(),
+								privacy_id = privacy_to_id(%s)
+						WHERE posts.owner = %s
+							AND posts.post_id = %s;
+					"""
+					params = (
+						privacy.name, user_id, post_id,
+					)
+
+				transaction.query(query, params)
+				transaction.commit()
+
+		except HttpError :
+			raise
+
+		except :
+			refid = uuid4().hex
+			logdata = {
+				'refid': refid,
+				'user_id': user_id,
+				'post_id': post_id,
+				'privacy': privacy.name,
+			}
+			self.logger.exception(logdata)
+			raise InternalServerError('an error occurred while updating post privacy.', logdata=logdata)
+
+		return {
+			post_id: {
+				'privacy': privacy.name,
+			},
 		}
