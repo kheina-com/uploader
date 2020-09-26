@@ -63,7 +63,7 @@ async def v1UpdatePost(req: UpdateRequest, token_data:TokenData=None) :
 	"""
 
 	return UJSONResponse(
-		uploader.updatePostMetadata(token_data.data['user_id'], **requestJson)
+		uploader.updatePostMetadata(token_data.data['user_id'], req.post_id, req.title, req.description)
 	)
 
 
@@ -79,7 +79,7 @@ async def v1UpdatePrivacy(req: PrivacyRequest, token_data:TokenData=None) :
 	"""
 
 	return UJSONResponse(
-		uploader.updatePrivacy(token_data.data['user_id'], **requestJson)
+		uploader.updatePrivacy(token_data.data['user_id'], req.post_id, req.privacy)
 	)
 
 

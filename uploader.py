@@ -1,5 +1,5 @@
+from kh_common.exceptions.http_error import BadRequest, Forbidden, HttpError, InternalServerError
 from kh_common.scoring import confidence, controversial as calc_cont, hot as calc_hot
-from kh_common.exceptions.http_error import BadRequest, HttpError, InternalServerError
 from kh_common.config.repo import name, short_hash
 from kh_common.backblaze import B2Interface
 from kh_common.logging import getLogger
@@ -27,6 +27,11 @@ class Uploader(SqlInterface, B2Interface) :
 			1200,
 		]
 		self.resample_function: int = Image.BICUBIC
+
+
+	def _validatePostId(self, post_id: str) :
+		if len(post_id) != 8 :
+			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
 
 
 	def _validatePrivacy(self, privacy: Privacy) :
@@ -60,6 +65,9 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	async def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
+		if post_id :
+			self._validatePostId(post_id)
+
 		try :
 			# we can't just open this one cause PIL sucks
 			Image.open(BytesIO(file_data)).verify()
@@ -95,8 +103,6 @@ class Uploader(SqlInterface, B2Interface) :
 				fetch_one=True,
 			)
 
-			post_id = data[0]
-
 		except :
 			refid: str = uuid4().hex
 			logdata = {
@@ -107,6 +113,11 @@ class Uploader(SqlInterface, B2Interface) :
 			}
 			self.logger.exception(logdata)
 			raise InternalServerError('an error occurred while updating post metadata.', logdata=logdata)
+
+		if not data :
+			raise Forbidden('the post you are trying to upload to does not belong to this account.')
+
+		post_id = data[0]
 
 		url = f'{post_id}/{filename}'
 		logdata = {
@@ -172,6 +183,8 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	def updatePostMetadata(self, user_id: int, post_id: str, title:str=None, description:str=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
+		self._validatePostId(post_id)
+
 		query = """
 			UPDATE kheina.public.posts
 			SET updated_on = NOW()
@@ -198,9 +211,10 @@ class Uploader(SqlInterface, B2Interface) :
 		try :
 			data = self.query(
 				query + """
-				WHERE post_id = %s and uploader = %s;
+				WHERE uploader = %s
+					AND post_id = %s;
 				""",
-				params + [post_id, user_id],
+				params + [user_id, post_id],
 				commit=True,
 			)
 
@@ -224,6 +238,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	def updatePrivacy(self, user_id: int, post_id: str, privacy: Privacy) :
+		self._validatePostId(post_id)
 		self._validatePrivacy(privacy)
 
 		try :
@@ -233,7 +248,7 @@ class Uploader(SqlInterface, B2Interface) :
 					FROM kheina.public.posts
 						INNER JOIN kheina.public.privacy
 							ON posts.privacy_id = privacy.privacy_id
-					WHERE posts.owner = %s
+					WHERE posts.uploader = %s
 						AND posts.post_id = %s;
 					""",
 					(user_id, post_id),
@@ -260,7 +275,7 @@ class Uploader(SqlInterface, B2Interface) :
 							SET created_on = NOW(),
 								updated_on = NOW(),
 								privacy_id = privacy_to_id(%s)
-						WHERE posts.owner = %s
+						WHERE posts.uploader = %s
 							AND posts.post_id = %s;
 					"""
 					params = (
@@ -275,7 +290,7 @@ class Uploader(SqlInterface, B2Interface) :
 							SET created_on = NOW(),
 								updated_on = NOW(),
 								privacy_id = privacy_to_id(%s)
-						WHERE posts.owner = %s
+						WHERE posts.uploader = %s
 							AND posts.post_id = %s;
 					"""
 					params = (
