@@ -5,10 +5,10 @@ from typing import Optional
 
 @unique
 class Privacy(Enum) :
-	public: int = 1
-	unlisted: int = 2
-	private: int = 3
-	unpublished: int = 4
+	public: str = 'public'
+	unlisted: str = 'unlisted'
+	private: str = 'private'
+	unpublished: str = 'unpublished'
 
 
 class UpdateRequest(BaseModel) :
