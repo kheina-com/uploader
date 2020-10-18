@@ -264,12 +264,14 @@ class Uploader(SqlInterface, B2Interface) :
 						INSERT INTO kheina.public.post_votes
 						(user_id, post_id, upvote)
 						VALUES
-						(%s, %s, %s);
+						(%s, %s, %s)
+						ON CONFLICT DO NOTHING;
 
 						INSERT INTO kheina.public.post_scores
 						(post_id, upvotes, downvotes, top, hot, best, controversial)
 						VALUES
-						(%s, %s, %s, %s, %s, %s, %s);
+						(%s, %s, %s, %s, %s, %s, %s)
+						ON CONFLICT DO NOTHING;
 
 						UPDATE kheina.public.posts
 							SET created_on = NOW(),
