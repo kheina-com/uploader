@@ -1,4 +1,5 @@
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from kh_common.exceptions.http_error import UnprocessableEntity
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from kh_common.exceptions import jsonErrorHandler
 from models import PrivacyRequest, UpdateRequest
@@ -33,7 +34,7 @@ async def v1CreatePost(req: Request) :
 
 
 @app.post('/v1/upload_image')
-async def v1UploadImage(req: Request, file: UploadFile = File('file'), post_id: Optional[str] = Form('post_id')) :
+async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Optional[str] = Form(None)) :
 	"""
 	FORMDATA: {
 		"post_id": Optional[str],
@@ -41,9 +42,21 @@ async def v1UploadImage(req: Request, file: UploadFile = File('file'), post_id: 
 	}
 	"""
 
+	if not file :
+		# since it doesn't do this for us, send the proper error back
+		return UJSONResponse({
+			'detail': [
+				{
+					'loc':['body', 'file'],
+					'msg': 'field required',
+					'type': 'value_error.missing'
+				},
+			]
+		}, status_code=422)
+
 	return UJSONResponse(
 		await uploader.uploadImage(
-			token_data.data['user_id'],
+			req.user.user_id,
 			file.file.read(),
 			file.filename,
 			post_id=post_id,
