@@ -1,19 +1,11 @@
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-from kh_common.exceptions.http_error import UnprocessableEntity
-from fastapi import FastAPI, File, Form, Request, UploadFile
-from kh_common.exceptions import jsonErrorHandler
+from kh_common.server import Request, ServerApp, UJSONResponse
 from models import PrivacyRequest, UpdateRequest
-from starlette.responses import UJSONResponse
-from kh_common.auth import KhAuthMiddleware
+from fastapi import File, Form, UploadFile
 from uploader import Uploader
 from typing import Optional
 
 
-app = FastAPI()
-app.add_exception_handler(Exception, jsonErrorHandler)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts={ 'localhost', '127.0.0.1', '*.kheina.com' })
-app.add_middleware(KhAuthMiddleware)
-
+app = ServerApp()
 uploader = Uploader()
 
 
