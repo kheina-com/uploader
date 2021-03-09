@@ -56,7 +56,6 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	@HttpErrorHandler('uploading image to backblaze')
 	async def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
 		if post_id :
 			self._validatePostId(post_id)
@@ -76,83 +75,96 @@ class Uploader(SqlInterface, B2Interface) :
 			self.logger.warning(logdata)
 			raise BadRequest('user image failed validation.', logdata=logdata)
 
-		image = Image.open(BytesIO(file_data))
-		content_type: str = self._get_mime_from_filename(image.format.lower())
+		try :
 
-		if content_type != self._get_mime_from_filename(filename) :
-			raise BadRequest('file extension does not match file type.')
+			image = Image.open(BytesIO(file_data))
+			content_type: str = self._get_mime_from_filename(image.format.lower())
 
-		data: List[str] = self.query("""
-			CALL kheina.public.user_upload_file(%s, %s, %s, %s);
-			""",
-			(
-				user_id,
-				post_id,
-				content_type,
-				filename,
-			),
-			commit=True,
-			fetch_one=True,
-		)
+			if content_type != self._get_mime_from_filename(filename) :
+				raise BadRequest('file extension does not match file type.')
 
-		if not data :
-			raise Forbidden('the post you are trying to upload to does not belong to this account.')
+			data: List[str] = self.query("""
+				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
+				""",
+				(
+					user_id,
+					post_id,
+					content_type,
+					filename,
+				),
+				commit=True,
+				fetch_one=True,
+			)
 
-		post_id = data[0]
+			if not data :
+				raise Forbidden('the post you are trying to upload to does not belong to this account.')
 
-		url = f'{post_id}/{filename}'
-		logdata = {
-			'user_id': user_id,
-			'post_id': post_id,
-			'url': url,
-			'filename': filename,
-			'image': 'full size',
-			'color': image.mode,
-			'type': image.format,
-			'animated': getattr(image, 'is_animated', False),
-		}
+			post_id = data[0]
 
-		uploads: List[coroutine] = []
+			url = f'{post_id}/{filename}'
+			logdata = {
+				'user_id': user_id,
+				'post_id': post_id,
+				'url': url,
+				'filename': filename,
+				'image': 'full size',
+				'color': image.mode,
+				'type': image.format,
+				'animated': getattr(image, 'is_animated', False),
+			}
 
-		# upload the raw file
-		uploads.append(self.b2_upload_async(file_data, url, content_type=content_type))
+			uploads: List[coroutine] = []
 
-		# render all thumbnails and queue them for upload async
-		if image.mode != 'RGB' :
-			background = Image.new('RGBA', image.size, (255,255,255))
-			image = Image.alpha_composite(background, image.convert('RGBA'))
-			del background
+			# upload the raw file
+			uploads.append(self.b2_upload_async(file_data, url, content_type=content_type))
 
-		image = image.convert('RGB')
-		long_side = 0 if image.size[0] > image.size[1] else 1
+			# render all thumbnails and queue them for upload async
+			if image.mode != 'RGB' :
+				background = Image.new('RGBA', image.size, (255,255,255))
+				image = Image.alpha_composite(background, image.convert('RGBA'))
+				del background
 
-		thumbnails = {}
+			image = image.convert('RGB')
+			long_side = 0 if image.size[0] > image.size[1] else 1
 
-		thumbnail_data = None
-		max_size = False
-		for size in self.thumbnail_sizes :
-			thumbnail_url = f'{post_id}/thumbnails/{size}.jpg'
-			logdata['image'] = f'thumbnail {size}'
-			logdata['url'] = thumbnail_url
-			ratio = size / image.size[long_side]
+			thumbnails = {}
 
-			if ratio < 1 :
-				# resize and output
-				thumbnail_data = BytesIO()
-				output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
-				thumbnail = image.resize(output_size, resample=self.resample_function).save(thumbnail_data, format='JPEG', quality=60)
+			thumbnail_data = None
+			max_size = False
+			for size in self.thumbnail_sizes :
+				thumbnail_url = f'{post_id}/thumbnails/{size}.jpg'
+				logdata['image'] = f'thumbnail {size}'
+				logdata['url'] = thumbnail_url
+				ratio = size / image.size[long_side]
 
-			elif not thumbnail_data or not max_size :
-				# just convert what we have
-				thumbnail_data = BytesIO()
-				thumbnail = image.save(thumbnail_data, format='JPEG', quality=60)
-				max_size = True
+				if ratio < 1 :
+					# resize and output
+					thumbnail_data = BytesIO()
+					output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
+					thumbnail = image.resize(output_size, resample=self.resample_function).save(thumbnail_data, format='JPEG', quality=60)
 
-			uploads.append(self.b2_upload_async(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg']))
-			thumbnails[size] = thumbnail_url
+				elif not thumbnail_data or not max_size :
+					# just convert what we have
+					thumbnail_data = BytesIO()
+					thumbnail = image.save(thumbnail_data, format='JPEG', quality=60)
+					max_size = True
 
-		for upload in uploads :
-			await upload
+				uploads.append(self.b2_upload_async(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg']))
+				thumbnails[size] = thumbnail_url
+
+			for upload in uploads :
+				await upload
+		
+		except Exception as e :
+			self.logger.critical(
+				'an unexpected error occurred while uploading image to backblaze.',
+				exc_info=e,
+				user_id=user_id,
+				post_id=post_id,
+				url=url,
+				thumbnails=thumbnails,
+				logdata=logdata,
+			)
 
 		return {
 			'user_id': user_id,
