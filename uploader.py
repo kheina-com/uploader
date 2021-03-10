@@ -1,11 +1,11 @@
 from kh_common.exceptions.http_error import BadRequest, Forbidden, HttpError, HttpErrorHandler, InternalServerError
 from kh_common.scoring import confidence, controversial as calc_cont, hot as calc_hot
 from kh_common.config.repo import name, short_hash
+from asyncio import coroutine, ensure_future
 from kh_common.backblaze import B2Interface
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
 from typing import Dict, List, Union
-from asyncio import coroutine
 from models import Privacy
 from io import BytesIO
 from math import floor
@@ -17,7 +17,7 @@ from PIL import Image
 class Uploader(SqlInterface, B2Interface) :
 
 	def __init__(self) -> None :
-		SqlInterface.__init__(self)
+		# SqlInterface.__init__(self)
 		B2Interface.__init__(self, max_retries=100)
 		self.thumbnail_sizes: List[int] = [
 			# the length of the longest side, in pixels
@@ -56,6 +56,20 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
+	async def uploadWrapper(self, coroutine: coroutine, logdata={}, **kwargs) :
+		try :
+			await coroutine
+
+		except Exception as e :
+			self.logger.critical({
+					'message': 'a user upload failed!',
+					**logdata,
+					**kwargs
+				},
+				exc_info=e,
+			)
+
+
 	async def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
 		if post_id :
 			self._validatePostId(post_id)
@@ -75,10 +89,23 @@ class Uploader(SqlInterface, B2Interface) :
 			self.logger.warning(logdata)
 			raise BadRequest('user image failed validation.', logdata=logdata)
 
+		url = None
+		thumbnails = None
+		logdata = None
+
 		try :
 
 			image = Image.open(BytesIO(file_data))
-			content_type: str = self._get_mime_from_filename(image.format.lower())
+			stripped_image = Image.new(image.mode, image.size)
+			stripped_image.putdata(image.getdata())
+			image = stripped_image
+			del stripped_image
+			content_type: str = f'image/{image.format.lower()}'
+
+			file_data = BytesIO()
+			file_data.name = filename
+			image.save(file_data)
+			file_data = file_data.read()
 
 			if content_type != self._get_mime_from_filename(filename) :
 				raise BadRequest('file extension does not match file type.')
@@ -103,8 +130,6 @@ class Uploader(SqlInterface, B2Interface) :
 
 			url = f'{post_id}/{filename}'
 			logdata = {
-				'user_id': user_id,
-				'post_id': post_id,
 				'url': url,
 				'filename': filename,
 				'image': 'full size',
@@ -113,10 +138,8 @@ class Uploader(SqlInterface, B2Interface) :
 				'animated': getattr(image, 'is_animated', False),
 			}
 
-			uploads: List[coroutine] = []
-
 			# upload the raw file
-			uploads.append(self.b2_upload_async(file_data, url, content_type=content_type))
+			ensure_future(uploadWrapper(self.b2_upload_async(file_data, url, content_type=content_type)), logdata)
 
 			# render all thumbnails and queue them for upload async
 			if image.mode != 'RGB' :
@@ -133,6 +156,7 @@ class Uploader(SqlInterface, B2Interface) :
 			max_size = False
 			for size in self.thumbnail_sizes :
 				thumbnail_url = f'{post_id}/thumbnails/{size}.jpg'
+				thumbnails[size] = thumbnail_url
 				logdata['image'] = f'thumbnail {size}'
 				logdata['url'] = thumbnail_url
 				ratio = size / image.size[long_side]
@@ -149,22 +173,17 @@ class Uploader(SqlInterface, B2Interface) :
 					thumbnail = image.save(thumbnail_data, format='JPEG', quality=60)
 					max_size = True
 
-				uploads.append(self.b2_upload_async(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg']))
-				thumbnails[size] = thumbnail_url
+				ensure_future(uploadWrapper(self.b2_upload_async(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])), logdata)
 
 			for upload in uploads :
 				await upload
 		
 		except Exception as e :
-			self.logger.critical(
-				'an unexpected error occurred while uploading image to backblaze.',
-				exc_info=e,
-				user_id=user_id,
-				post_id=post_id,
-				url=url,
-				thumbnails=thumbnails,
-				logdata=logdata,
-			)
+			self.logger.critical({
+				'message': 'an unexpected error occurred while uploading image to backblaze.',
+				'thumbnails': thumbnails,
+				**logdata,
+			})
 
 		return {
 			'user_id': user_id,
