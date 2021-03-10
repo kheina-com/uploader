@@ -3,10 +3,9 @@ from models import PrivacyRequest, UpdateRequest
 from fastapi import File, Form, UploadFile
 from uploader import Uploader
 from typing import Optional
-from asyncio import ensure_future
 
 
-app = ServerApp(auth=False)
+app = ServerApp()
 uploader = Uploader()
 
 
@@ -47,16 +46,14 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Op
 			]
 		}, status_code=422)
 
-	ensure_future(
-		uploader.uploadImage(
-			36,
+	return UJSONResponse(
+		await uploader.uploadImage(
+			req.user.user_id,
 			file.file.read(),
 			file.filename,
 			post_id=post_id,
 		)
 	)
-	return UJSONResponse({ 'success': 'pending'})
-
 
 
 @app.post('/v1/update_post')
