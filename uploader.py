@@ -18,7 +18,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 	def __init__(self) -> None :
 		SqlInterface.__init__(self)
-		B2Interface.__init__(self, max_retries=1)
+		B2Interface.__init__(self, max_retries=5)
 		self.thumbnail_sizes: List[int] = [
 			# the length of the longest side, in pixels
 			100,
@@ -156,7 +156,7 @@ class Uploader(SqlInterface, B2Interface) :
 			thumbnail_data = None
 			max_size = False
 			for size in self.thumbnail_sizes :
-				thumbnail_url = f'{post_id}/thumbnails/{size}.jpg'
+				thumbnail_url = f'{post_id}/thumbnails/{size}.webp'
 				thumbnails[size] = thumbnail_url
 				logdata['image'] = f'thumbnail {size}'
 				logdata['url'] = thumbnail_url
@@ -166,15 +166,15 @@ class Uploader(SqlInterface, B2Interface) :
 					# resize and output
 					thumbnail_data = BytesIO()
 					output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
-					thumbnail = image.resize(output_size, resample=self.resample_function).save(thumbnail_data, format='JPEG', quality=60)
+					image.resize(output_size, resample=self.resample_function).save(thumbnail_data, format='WEBP', quality=75)
 
 				elif not thumbnail_data or not max_size :
 					# just convert what we have
 					thumbnail_data = BytesIO()
-					thumbnail = image.save(thumbnail_data, format='JPEG', quality=60)
+					image.save(thumbnail_data, format='WEBP', quality=75)
 					max_size = True
 
-				self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])
+				self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['webp'])
 
 			return {
 				'user_id': user_id,
