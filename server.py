@@ -6,7 +6,7 @@ from typing import Optional
 from asyncio import ensure_future
 
 
-app = ServerApp(auth=False)
+app = ServerApp()
 uploader = Uploader()
 
 
