@@ -18,7 +18,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 	def __init__(self) -> None :
 		# SqlInterface.__init__(self)
-		B2Interface.__init__(self, max_retries=100)
+		B2Interface.__init__(self, max_retries=1)
 		self.thumbnail_sizes: List[int] = [
 			# the length of the longest side, in pixels
 			100,
@@ -96,37 +96,38 @@ class Uploader(SqlInterface, B2Interface) :
 		try :
 
 			image = Image.open(BytesIO(file_data))
-			stripped_image = Image.new(image.mode, image.size)
-			stripped_image.putdata(image.getdata())
-			image = stripped_image
-			del stripped_image
 			content_type: str = f'image/{image.format.lower()}'
-
-			file_data = BytesIO()
-			file_data.name = filename
-			image.save(file_data)
-			file_data = file_data.read()
 
 			if content_type != self._get_mime_from_filename(filename) :
 				raise BadRequest('file extension does not match file type.')
 
-			data: List[str] = self.query("""
-				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
-				""",
-				(
-					user_id,
-					post_id,
-					content_type,
-					filename,
-				),
-				commit=True,
-				fetch_one=True,
-			)
+			stripped_image = Image.new(image.mode, image.size)
+			stripped_image.putdata(image.getdata())
+			image = stripped_image
+			del stripped_image
 
-			if not data :
-				raise Forbidden('the post you are trying to upload to does not belong to this account.')
+			file_data = BytesIO()
+			file_data.name = filename
+			image.save(file_data)
+			file_data = file_data.getvalue()
 
-			post_id = data[0]
+			# data: List[str] = self.query("""
+			# 	CALL kheina.public.user_upload_file(%s, %s, %s, %s);
+			# 	""",
+			# 	(
+			# 		user_id,
+			# 		post_id,
+			# 		content_type,
+			# 		filename,
+			# 	),
+			# 	commit=True,
+			# 	fetch_one=True,
+			# )
+
+			# if not data :
+			# 	raise Forbidden('the post you are trying to upload to does not belong to this account.')
+
+			# post_id = data[0]
 
 			url = f'{post_id}/{filename}'
 			logdata = {
@@ -139,7 +140,7 @@ class Uploader(SqlInterface, B2Interface) :
 			}
 
 			# upload the raw file
-			ensure_future(uploadWrapper(self.b2_upload_async(file_data, url, content_type=content_type)), logdata)
+			self.b2_upload(file_data, url, content_type=content_type)
 
 			# render all thumbnails and queue them for upload async
 			if image.mode != 'RGB' :
@@ -173,24 +174,30 @@ class Uploader(SqlInterface, B2Interface) :
 					thumbnail = image.save(thumbnail_data, format='JPEG', quality=60)
 					max_size = True
 
-				ensure_future(uploadWrapper(self.b2_upload_async(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])), logdata)
+				self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])
 
-			for upload in uploads :
-				await upload
-		
-		except Exception as e :
-			self.logger.critical({
-				'message': 'an unexpected error occurred while uploading image to backblaze.',
+			return {
+				'user_id': user_id,
+				'post_id': post_id,
+				'url': url,
 				'thumbnails': thumbnails,
-				**logdata,
-			})
+			}
 
-		return {
-			'user_id': user_id,
-			'post_id': post_id,
-			'url': url,
-			'thumbnails': thumbnails,
-		}
+		except Exception as e :
+			refid: str = uuid4().hex
+			self.logger.critical({
+					'refid': refid,
+					'error': str(e),
+					'message': 'an unexpected error occurred while uploading image to backblaze.',
+					'thumbnails': thumbnails,
+					**logdata,
+				},
+				exc_info=e,
+			)
+			raise InternalServerError(
+				'an unexpected error occurred while uploading image to backblaze.',
+				refid=refid,
+			)
 
 
 	@HttpErrorHandler('updating post metadata')
