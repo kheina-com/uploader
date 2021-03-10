@@ -17,7 +17,7 @@ from PIL import Image
 class Uploader(SqlInterface, B2Interface) :
 
 	def __init__(self) -> None :
-		# SqlInterface.__init__(self)
+		SqlInterface.__init__(self)
 		B2Interface.__init__(self, max_retries=1)
 		self.thumbnail_sizes: List[int] = [
 			# the length of the longest side, in pixels
@@ -111,23 +111,23 @@ class Uploader(SqlInterface, B2Interface) :
 			image.save(file_data)
 			file_data = file_data.getvalue()
 
-			# data: List[str] = self.query("""
-			# 	CALL kheina.public.user_upload_file(%s, %s, %s, %s);
-			# 	""",
-			# 	(
-			# 		user_id,
-			# 		post_id,
-			# 		content_type,
-			# 		filename,
-			# 	),
-			# 	commit=True,
-			# 	fetch_one=True,
-			# )
+			data: List[str] = self.query("""
+				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
+				""",
+				(
+					user_id,
+					post_id,
+					content_type,
+					filename,
+				),
+				commit=True,
+				fetch_one=True,
+			)
 
-			# if not data :
-			# 	raise Forbidden('the post you are trying to upload to does not belong to this account.')
+			if not data :
+				raise Forbidden('the post you are trying to upload to does not belong to this account.')
 
-			# post_id = data[0]
+			post_id = data[0]
 
 			url = f'{post_id}/{filename}'
 			logdata = {

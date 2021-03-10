@@ -49,7 +49,7 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Op
 
 	return UJSONResponse(
 		await uploader.uploadImage(
-			36,
+			req.user.user_id,
 			file.file.read(),
 			file.filename,
 			post_id=post_id,
