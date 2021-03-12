@@ -70,6 +70,24 @@ class Uploader(SqlInterface, B2Interface) :
 			)
 
 
+	async def uploadJpegBackup(self, post_id: str, thumbnail_data: bytes) :
+		jpeg = Image.open(BytesIO(thumbnail_data))
+
+		if jpeg.mode != 'RGB' :
+			background = Image.new('RGBA', jpeg.size, (255,255,255))
+			jpeg = Image.alpha_composite(background, jpeg.convert('RGBA'))
+			del background
+
+		jpeg = jpeg.convert('RGB')
+		jpeg.save(thumbnail_data, format='JPEG', quality=75)
+
+		thumbnail_url = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpeg'
+
+		self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])
+
+		return thumbnail_url
+
+
 	async def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
 		if post_id :
 			self._validatePostId(post_id)
@@ -142,16 +160,12 @@ class Uploader(SqlInterface, B2Interface) :
 			# upload the raw file
 			self.b2_upload(file_data, url, content_type=content_type)
 
-			# render all thumbnails and queue them for upload async
-			if image.mode != 'RGB' :
-				background = Image.new('RGBA', image.size, (255,255,255))
-				image = Image.alpha_composite(background, image.convert('RGBA'))
-				del background
-
-			image = image.convert('RGB')
+			# render all thumbnails and queue them for upload async. I'm back, async doesn't work with large files.
 			long_side = 0 if image.size[0] > image.size[1] else 1
 
-			thumbnails = {}
+			image = image.convert('RGBA')
+
+			thumbnails = { }
 
 			thumbnail_data = None
 			max_size = False
@@ -176,6 +190,9 @@ class Uploader(SqlInterface, B2Interface) :
 
 				self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['webp'])
 
+			# finally, the jpeg backup
+			thumbnails['jpeg'] = await self.uploadJpegBackup(post_id, thumbnail_data)
+
 			return {
 				'user_id': user_id,
 				'post_id': post_id,
@@ -199,6 +216,9 @@ class Uploader(SqlInterface, B2Interface) :
 				refid=refid,
 			)
 
+
+	def setPostAsIcon(self, user_id: int, post_id: str) :
+		pass
 
 	@HttpErrorHandler('updating post metadata')
 	def updatePostMetadata(self, user_id: int, post_id: str, title:str=None, description:str=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
