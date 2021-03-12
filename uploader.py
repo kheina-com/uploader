@@ -70,7 +70,7 @@ class Uploader(SqlInterface, B2Interface) :
 			)
 
 
-	async def uploadJpegBackup(self, post_id: str, thumbnail_data: bytes) :
+	async def uploadJpegBackup(self, post_id: str, thumbnail_data: BytesIO) :
 		jpeg = Image.open(thumbnail_data)
 
 		if jpeg.mode != 'RGB' :
@@ -83,7 +83,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 		thumbnail_url = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpeg'
 
-		self.b2_upload(jpeg.getvalue(), thumbnail_url, self.mime_types['jpeg'])
+		self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])
 
 		return thumbnail_url
 
