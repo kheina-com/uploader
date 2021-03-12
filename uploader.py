@@ -83,7 +83,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 		thumbnail_url = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpeg'
 
-		self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])
+		self.b2_upload(jpeg.getvalue(), thumbnail_url, self.mime_types['jpeg'])
 
 		return thumbnail_url
 
