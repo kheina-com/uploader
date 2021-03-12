@@ -71,7 +71,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	async def uploadJpegBackup(self, post_id: str, thumbnail_data: bytes) :
-		jpeg = Image.open(BytesIO(thumbnail_data))
+		jpeg = Image.open(thumbnail_data)
 
 		if jpeg.mode != 'RGB' :
 			background = Image.new('RGBA', jpeg.size, (255,255,255))
