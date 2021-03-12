@@ -79,6 +79,7 @@ class Uploader(SqlInterface, B2Interface) :
 			del background
 
 		jpeg = jpeg.convert('RGB')
+		thumbnail_data = BytesIO()
 		jpeg.save(thumbnail_data, format='JPEG', quality=75)
 
 		thumbnail_url = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpeg'
