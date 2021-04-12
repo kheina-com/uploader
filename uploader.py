@@ -1,4 +1,4 @@
-from kh_common.exceptions.http_error import BadRequest, Forbidden, HttpError, HttpErrorHandler, InternalServerError
+from kh_common.exceptions.http_error import BadRequest, Forbidden, HttpError, HttpErrorHandler, InternalServerError, NotFound
 from kh_common.scoring import confidence, controversial as calc_cont, hot as calc_hot
 from kh_common.config.repo import name, short_hash
 from asyncio import coroutine, ensure_future
@@ -6,7 +6,7 @@ from kh_common.backblaze import B2Interface
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
 from typing import Dict, List, Union
-from models import Privacy
+from models import Privacy, Rating
 from io import BytesIO
 from math import floor
 from uuid import uuid4
@@ -33,11 +33,6 @@ class Uploader(SqlInterface, B2Interface) :
 	def _validatePostId(self, post_id: str) :
 		if len(post_id) != 8 :
 			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
-
-
-	def _validatePrivacy(self, privacy: Privacy) :
-		if privacy == Privacy.unpublished :
-			raise BadRequest('you cannot set a post to unpublished.')
 
 
 	@HttpErrorHandler('creating new post')
@@ -161,7 +156,8 @@ class Uploader(SqlInterface, B2Interface) :
 			# upload the raw file
 			self.b2_upload(file_data, url, content_type=content_type)
 
-			# render all thumbnails and queue them for upload async. I'm back, async doesn't work with large files.
+			# render all thumbnails and queue them for upload async.
+			# I'm back, async doesn't work with large files.
 			long_side = 0 if image.size[0] > image.size[1] else 1
 
 			image = image.convert('RGBA')
@@ -213,17 +209,17 @@ class Uploader(SqlInterface, B2Interface) :
 				exc_info=e,
 			)
 			raise InternalServerError(
-				'an unexpected error occurred while uploading image to backblaze.',
+				'an unexpected error occurred while uploading image to cdn.',
 				refid=refid,
 			)
 
 
-	def setPostAsIcon(self, user_id: int, post_id: str) :
-		pass
-
 	@HttpErrorHandler('updating post metadata')
-	def updatePostMetadata(self, user_id: int, post_id: str, title:str=None, description:str=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
+	def updatePostMetadata(self, user_id: int, post_id: str, title:str=None, description:str=None, privacy:Privacy=None, rating:Rating=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
 		self._validatePostId(post_id)
+
+		if privacy :
+			self.updatePrivacy(user_id, post_id, privacy)
 
 		query = """
 			UPDATE kheina.public.posts
@@ -231,19 +227,16 @@ class Uploader(SqlInterface, B2Interface) :
 			"""
 
 		params = []
-		return_data = { }
 
 		if title :
 			query += """,
 			title = %s"""
 			params.append(title)
-			return_data['title'] = title
 
 		if description :
 			query += """,
 			description = %s"""
 			params.append(description)
-			return_data['description'] = description
 
 		if not params :
 			raise BadRequest('no params were provided.')
@@ -257,17 +250,11 @@ class Uploader(SqlInterface, B2Interface) :
 			commit=True,
 		)
 
-		return {
-			'user_id': user_id,
-			'post_id': post_id,
-			'data': return_data,
-		}
+		return True
 
 
-	@HttpErrorHandler('updating post privacy')
-	def updatePrivacy(self, user_id: int, post_id: str, privacy: Privacy) :
+	def _update_privacy(self, user_id: int, post_id: str, privacy: Privacy) :
 		self._validatePostId(post_id)
-		self._validatePrivacy(privacy)
 
 		with self.transaction() as transaction :
 			data = transaction.query("""
@@ -283,8 +270,7 @@ class Uploader(SqlInterface, B2Interface) :
 			)
 
 			if not data :
-				raise BadRequest('the provided post does not exist or it does not belong to this account.')
-
+				raise NotFound('the provided post does not exist or it does not belong to this account.')
 
 			if data[0] == 'unpublished' :
 				query = """
@@ -316,8 +302,7 @@ class Uploader(SqlInterface, B2Interface) :
 			else :
 				query = """
 					UPDATE kheina.public.posts
-						SET created_on = NOW(),
-							updated_on = NOW(),
+						SET updated_on = NOW(),
 							privacy_id = privacy_to_id(%s)
 					WHERE posts.uploader = %s
 						AND posts.post_id = %s;
@@ -329,8 +314,8 @@ class Uploader(SqlInterface, B2Interface) :
 			transaction.query(query, params)
 			transaction.commit()
 
-		return {
-			post_id: {
-				'privacy': privacy.name,
-			},
-		}
+		return True
+	
+	@HttpErrorHandler('updating post privacy')
+	def updatePrivacy(self, user_id: int, post_id: str, privacy: Privacy) :
+		self._update_privacy(user_id, post_id, privacy)

@@ -1,6 +1,7 @@
 from kh_common.server import Request, ServerApp, UJSONResponse
 from models import PrivacyRequest, UpdateRequest
 from fastapi import File, Form, UploadFile
+from fastapi.responses import Response
 from uploader import Uploader
 from typing import Optional
 from asyncio import ensure_future
@@ -40,9 +41,12 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Op
 		return UJSONResponse({
 			'detail': [
 				{
-					'loc':['body', 'file'],
+					'loc': [
+						'body',
+						'file'
+					],
 					'msg': 'field required',
-					'type': 'value_error.missing'
+					'type': 'value_error.missing',
 				},
 			]
 		}, status_code=422)
@@ -67,14 +71,15 @@ async def v1UpdatePost(req: Request, body: UpdateRequest) :
 	}
 	"""
 
-	return UJSONResponse(
-		uploader.updatePostMetadata(
-			req.user.user_id,
-			body.post_id,
-			body.title,
-			body.description,
-		)
-	)
+	if uploader.updatePostMetadata(
+		req.user.user_id,
+		body.post_id,
+		body.title,
+		body.description,
+		body.privacy,
+		body.rating,
+	) :
+		return Response(None, status_code=204)
 
 
 @app.post('/v1/update_privacy')
@@ -86,9 +91,8 @@ async def v1UpdatePrivacy(req: Request, body: PrivacyRequest) :
 	}
 	"""
 
-	return UJSONResponse(
-		uploader.updatePrivacy(req.user.user_id, body.post_id, body.privacy)
-	)
+	if uploader.updatePrivacy(req.user.user_id, body.post_id, body.privacy) :
+		return Response(None, status_code=204)
 
 
 if __name__ == '__main__' :
