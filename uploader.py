@@ -1,10 +1,10 @@
 from kh_common.exceptions.http_error import BadRequest, Forbidden, HttpError, HttpErrorHandler, InternalServerError, NotFound
 from kh_common.scoring import confidence, controversial as calc_cont, hot as calc_hot
+from kh_common.sql import SqlInterface, Transaction
 from kh_common.config.repo import name, short_hash
 from asyncio import coroutine, ensure_future
 from kh_common.backblaze import B2Interface
 from kh_common.logging import getLogger
-from kh_common.sql import SqlInterface
 from typing import Dict, List, Union
 from models import Privacy, Rating
 from io import BytesIO
@@ -33,6 +33,16 @@ class Uploader(SqlInterface, B2Interface) :
 	def _validatePostId(self, post_id: str) :
 		if len(post_id) != 8 :
 			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
+
+
+	def _validateTitle(self, title: str) :
+		if title and len(title) > 100 :
+			raise BadRequest('the given title is invalid, title cannot be over 100 characters in length.', logdata={ 'post_id': post_id, 'title': title })
+
+
+	def _validateDescription(self, description: str) :
+		if description and len(description) > 10000 :
+			raise BadRequest('the given description is invalid, description cannot be over 10,000 characters in length.', logdata={ 'post_id': post_id, 'description': description })
 
 
 	@HttpErrorHandler('creating new post')
@@ -217,9 +227,8 @@ class Uploader(SqlInterface, B2Interface) :
 	@HttpErrorHandler('updating post metadata')
 	def updatePostMetadata(self, user_id: int, post_id: str, title:str=None, description:str=None, privacy:Privacy=None, rating:Rating=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
 		self._validatePostId(post_id)
-
-		if privacy :
-			self.updatePrivacy(user_id, post_id, privacy)
+		self._validateTitle(title)
+		self._validateDescription(description)
 
 		query = """
 			UPDATE kheina.public.posts
@@ -238,26 +247,36 @@ class Uploader(SqlInterface, B2Interface) :
 			description = %s"""
 			params.append(description)
 
+		if rating :
+			query += """,
+			rating = rating_to_id(%s)"""
+			params.append(rating.name)
+
 		if not params :
 			raise BadRequest('no params were provided.')
 
-		data = self.query(
-			query + """
-			WHERE uploader = %s
-				AND post_id = %s;
-			""",
-			params + [user_id, post_id],
-			commit=True,
-		)
+		with self.transaction() as t :
+			t.query(
+				query + """
+				WHERE uploader = %s
+					AND post_id = %s;
+				""",
+				params + [user_id, post_id],
+			)
+
+			if privacy :
+				self._update_privacy(user_id, post_id, privacy, transaction=t, commit=False)
+			
+			t.commit()
 
 		return True
 
 
-	def _update_privacy(self, user_id: int, post_id: str, privacy: Privacy) :
+	def _update_privacy(self, user_id: int, post_id: str, privacy: Privacy, transaction: Transaction = None, commit: bool = True) :
 		self._validatePostId(post_id)
 
-		with self.transaction() as transaction :
-			data = transaction.query("""
+		with transaction or self.transaction() as t :
+			data = t.query("""
 				SELECT privacy.type
 				FROM kheina.public.posts
 					INNER JOIN kheina.public.privacy
@@ -311,8 +330,10 @@ class Uploader(SqlInterface, B2Interface) :
 					privacy.name, user_id, post_id,
 				)
 
-			transaction.query(query, params)
-			transaction.commit()
+			t.query(query, params)
+
+			if commit :
+				t.commit()
 
 		return True
 	
