@@ -87,7 +87,7 @@ class Uploader(SqlInterface, B2Interface) :
 		thumbnail_data = BytesIO()
 		jpeg.save(thumbnail_data, format='JPEG', quality=75)
 
-		thumbnail_url = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpeg'
+		thumbnail_url = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg'
 
 		self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])
 
