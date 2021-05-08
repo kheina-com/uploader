@@ -96,7 +96,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 		with self.transaction() as transaction :
 			while True :
-				post_id = b64encode(token_bytes(6))
+				post_id = b64encode(token_bytes(6)).decode()
 				data = transaction.query(f"SELECT count(1) FROM kheina.public.posts WHERE post_id = '{post_id}'", fetch_one=True)
 				if not data[0] :
 					break
