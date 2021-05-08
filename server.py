@@ -1,5 +1,5 @@
+from models import CreateRequest, PrivacyRequest, UpdateRequest
 from kh_common.server import Request, ServerApp, UJSONResponse
-from models import PrivacyRequest, UpdateRequest
 from fastapi import File, Form, UploadFile
 from fastapi.responses import Response
 from uploader import Uploader
@@ -17,10 +17,22 @@ async def shutdown() :
 
 
 @app.post('/v1/create_post')
-async def v1CreatePost(req: Request) :
+async def v1CreatePost(req: Request, body: CreateRequest) :
 	"""
 	only auth required
 	"""
+
+	if any(body.dict().values()) :
+		return UJSONResponse(
+			uploader.createPostWithFields(
+				req.user,
+				body.reply_to,
+				body.title,
+				body.description,
+				body.privacy,
+				body.rating,
+			)
+		)
 
 	return UJSONResponse(
 		uploader.createPost(req.user.user_id)

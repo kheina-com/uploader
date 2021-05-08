@@ -5,8 +5,11 @@ from kh_common.config.repo import name, short_hash
 from asyncio import coroutine, ensure_future
 from kh_common.backblaze import B2Interface
 from kh_common.logging import getLogger
+from kh_common.base64 import b64encode
 from typing import Dict, List, Union
 from models import Privacy, Rating
+from kh_common.auth import KhUser
+from secrets import token_bytes
 from io import BytesIO
 from math import floor
 from uuid import uuid4
@@ -61,18 +64,60 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	async def uploadWrapper(self, coroutine: coroutine, logdata={}, **kwargs) :
-		try :
-			await coroutine
+	def createPostWithFields(user: KhUser, reply_to: str, title: str, description: str, privacy: Privacy, rating: Rating) :
+		columns = ['post_id', 'uploader']
+		values = ['%s', '%s']
+		params = [user.user_id]
 
-		except Exception as e :
-			self.logger.critical({
-					'message': 'a user upload failed!',
-					**logdata,
-					**kwargs
-				},
-				exc_info=e,
+		if reply_to :
+			self._validatePostId(reply_to)
+			columns.append('parent')
+			values.append('%s')
+			params.append(reply_to)
+
+		if title :
+			self._validateTitle(title)
+			columns.append('title')
+			values.append('%s')
+			params.append(title)
+
+		if description :
+			self._validateDescription(description)
+			columns.append('description')
+			values.append('%s')
+			params.append(description)
+
+		if rating :
+			columns.append('rating')
+			values.append('rating_to_id(%s)')
+			params.append(rating.name)
+
+		post_id = None
+
+		with self.transaction() as transaction :
+			while True :
+				post_id = b64encode(token_bytes(6))
+				data = transaction.query(f"SELECT count(1) FROM kheina.public.posts WHERE post_id = '{post_id}'", fetch_one=True)
+				if not data[0] :
+					break
+
+			transaction.query(f"""
+				INSERT INTO kheina.public.posts
+				({','.join(columns)})
+				VALUES
+				({','.join(values)})
+				""",
+				[post_id] + params,
 			)
+
+			if privacy :
+				self._update_privacy(user.user_id, post_id, privacy, transaction=transaction, commit=False)
+
+			transaction.commit()
+
+		return {
+			'post_id': post_id,
+		}
 
 
 	async def uploadJpegBackup(self, post_id: str, thumbnail_data: BytesIO) :

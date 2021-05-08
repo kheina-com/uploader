@@ -25,6 +25,14 @@ class UpdateRequest(BaseModel) :
 	privacy: Optional[Privacy]
 
 
+class CreateRequest(BaseModel) :
+	reply_to: Optional[str]
+	title: Optional[str]
+	description: Optional[str]
+	rating: Optional[Rating]
+	privacy: Privacy
+
+
 class PrivacyRequest(BaseModel) :
 	post_id: str
 	privacy: Privacy
