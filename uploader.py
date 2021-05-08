@@ -64,7 +64,7 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def createPostWithFields(user: KhUser, reply_to: str, title: str, description: str, privacy: Privacy, rating: Rating) :
+	def createPostWithFields(self, user: KhUser, reply_to: str, title: str, description: str, privacy: Privacy, rating: Rating) :
 		columns = ['post_id', 'uploader']
 		values = ['%s', '%s']
 		params = [user.user_id]
