@@ -30,7 +30,7 @@ class CreateRequest(BaseModel) :
 	title: Optional[str]
 	description: Optional[str]
 	rating: Optional[Rating]
-	privacy: Privacy
+	privacy: Optional[Privacy]
 
 
 class PrivacyRequest(BaseModel) :
