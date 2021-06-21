@@ -40,12 +40,12 @@ class Uploader(SqlInterface, B2Interface) :
 
 	def _validateTitle(self, title: str) :
 		if title and len(title) > 100 :
-			raise BadRequest('the given title is invalid, title cannot be over 100 characters in length.', logdata={ 'post_id': post_id, 'title': title })
+			raise BadRequest('the given title is invalid, title cannot be over 100 characters in length.', logdata={ 'title': title })
 
 
 	def _validateDescription(self, description: str) :
 		if description and len(description) > 10000 :
-			raise BadRequest('the given description is invalid, description cannot be over 10,000 characters in length.', logdata={ 'post_id': post_id, 'description': description })
+			raise BadRequest('the given description is invalid, description cannot be over 10,000 characters in length.', logdata={ 'description': description })
 
 
 	@HttpErrorHandler('creating new post')
@@ -130,7 +130,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 		jpeg = jpeg.convert('RGB')
 		thumbnail_data = BytesIO()
-		jpeg.save(thumbnail_data, format='JPEG', quality=75)
+		jpeg.save(thumbnail_data, format='JPEG', quality=85)
 
 		thumbnail_url = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg'
 
@@ -139,7 +139,7 @@ class Uploader(SqlInterface, B2Interface) :
 		return thumbnail_url
 
 
-	async def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, type(None)]=None) -> Dict[str, Union[str, int, List[str]]] :
+	async def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, None]=None) -> Dict[str, Union[str, int, List[str]]] :
 		if post_id :
 			self._validatePostId(post_id)
 
@@ -179,6 +179,18 @@ class Uploader(SqlInterface, B2Interface) :
 			file_data.name = filename
 			image.save(file_data)
 			file_data = file_data.getvalue()
+
+			if post_id :
+				data: List[str] = self.query("""
+					SELECT posts.filename from kheina.public.posts
+					WHERE posts.post_id = %s
+					""",
+					(post_id,),
+					fetch_one=True,
+				)
+
+				if data and data[0] :
+					await self.b2_delete_file_async(f'{post_id}/{data[0]}')
 
 			data: List[str] = self.query("""
 				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
@@ -232,12 +244,12 @@ class Uploader(SqlInterface, B2Interface) :
 					# resize and output
 					thumbnail_data = BytesIO()
 					output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
-					image.resize(output_size, resample=self.resample_function).save(thumbnail_data, format='WEBP', quality=75)
+					image.resize(output_size, resample=self.resample_function).save(thumbnail_data, format='WEBP', quality=85)
 
 				elif not thumbnail_data or not max_size :
 					# just convert what we have
 					thumbnail_data = BytesIO()
-					image.save(thumbnail_data, format='WEBP', quality=75)
+					image.save(thumbnail_data, format='WEBP', quality=85)
 					max_size = True
 
 				self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['webp'])
