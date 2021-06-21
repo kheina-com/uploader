@@ -180,18 +180,6 @@ class Uploader(SqlInterface, B2Interface) :
 			image.save(file_data)
 			file_data = file_data.getvalue()
 
-			if post_id :
-				data: List[str] = self.query("""
-					SELECT posts.filename from kheina.public.posts
-					WHERE posts.post_id = %s
-					""",
-					(post_id,),
-					fetch_one=True,
-				)
-
-				if data and data[0] :
-					await self.b2_delete_file_async(f'{post_id}/{data[0]}')
-
 			data: List[str] = self.query("""
 				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
 				""",
@@ -207,6 +195,18 @@ class Uploader(SqlInterface, B2Interface) :
 
 			if not data :
 				raise Forbidden('the post you are trying to upload to does not belong to this account.')
+
+			if post_id :
+				old_filename: List[str] = self.query("""
+					SELECT posts.filename from kheina.public.posts
+					WHERE posts.post_id = %s
+					""",
+					(post_id,),
+					fetch_one=True,
+				)
+
+				if old_filename and old_filename[0] :
+					await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}')
 
 			post_id = data[0]
 
