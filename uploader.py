@@ -4,11 +4,11 @@ from kh_common.sql import SqlInterface, Transaction
 from kh_common.config.repo import name, short_hash
 from asyncio import coroutine, ensure_future
 from kh_common.backblaze import B2Interface
+from kh_common.auth import KhUser, Scope
 from kh_common.logging import getLogger
 from kh_common.base64 import b64encode
 from typing import Dict, List, Union
 from models import Privacy, Rating
-from kh_common.auth import KhUser
 from secrets import token_bytes
 from io import BytesIO
 from math import floor
@@ -30,6 +30,8 @@ class Uploader(SqlInterface, B2Interface) :
 			800,
 			1200,
 		]
+		self.emoji_size: int = 128
+		self.output_quality: int = 85
 		self.resample_function: int = Image.BICUBIC
 
 
@@ -139,7 +141,23 @@ class Uploader(SqlInterface, B2Interface) :
 		return thumbnail_url
 
 
-	async def uploadImage(self, user_id: int, file_data: bytes, filename: str, post_id:Union[str, None]=None) -> Dict[str, Union[str, int, List[str]]] :
+	def convert_image(self, image: Image, size: int) -> Image :
+		long_side = 0 if image.size[0] > image.size[1] else 1
+		ratio = size / image.size[long_side]
+
+		if ratio < 1 :
+			output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
+			return image.resize(output_size, resample=self.resample_function)
+
+		return image
+
+	def image_to_bytes(self, image: Image, format: str = None, quality: int = None) -> bytes :
+		image_data = BytesIO()
+		image.save(image_data, format=format or image.format, quality=quality or self.output_quality)
+		return image_data.getvalue()
+
+
+	async def uploadImage(self, user: KhUser, file_data: bytes, filename: str, post_id:Union[str, None]=None, emoji_name:str=None) -> Dict[str, Union[str, int, List[str]]] :
 		if post_id :
 			self._validatePostId(post_id)
 
@@ -151,7 +169,7 @@ class Uploader(SqlInterface, B2Interface) :
 			refid: str = uuid4().hex
 			logdata = {
 				'refid': refid,
-				'user_id': user_id,
+				'user_id': user.user_id,
 				'filename': filename,
 				'error': str(e),
 			}
@@ -192,7 +210,7 @@ class Uploader(SqlInterface, B2Interface) :
 				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
 				""",
 				(
-					user_id,
+					user.user_id,
 					post_id,
 					content_type,
 					filename,
@@ -205,7 +223,8 @@ class Uploader(SqlInterface, B2Interface) :
 				raise Forbidden('the post you are trying to upload to does not belong to this account.')
 
 			if post_id and old_filename and old_filename[0] :
-				await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}')
+				if not await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}') :
+					self.logger.error(f'failed to delete old image: {post_id}/{old_filename[0]}')
 
 			post_id = data[0]
 
@@ -227,6 +246,22 @@ class Uploader(SqlInterface, B2Interface) :
 			long_side = 0 if image.size[0] > image.size[1] else 1
 
 			image = image.convert('RGBA')
+
+			if emoji_name :
+				if not await user.verify_scope(Scope.admin) :
+					handle: List[str] = self.query("""
+						SELECT users.handle from kheina.public.users
+						WHERE users.user_id = %s
+						""",
+						(user.user_id,),
+						fetch_one=True,
+					)
+					emoji_name = f'{handle[0]}-{emoji_name}'
+
+				emoji = self.convert_image(image, self.emoji_size)
+
+				self.b2_upload(self.image_to_bytes(emoji, format='WEBP', quality=100), f'emoji/{emoji_name}.webp', self.mime_types['webp'])
+
 
 			thumbnails = { }
 
@@ -257,7 +292,7 @@ class Uploader(SqlInterface, B2Interface) :
 			thumbnails['jpeg'] = await self.uploadJpegBackup(post_id, thumbnail_data)
 
 			return {
-				'user_id': user_id,
+				'user_id': user.user_id,
 				'post_id': post_id,
 				'url': url,
 				'thumbnails': thumbnails,
