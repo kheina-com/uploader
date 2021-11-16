@@ -135,7 +135,7 @@ class Uploader(SqlInterface, B2Interface) :
 		if post_id :
 			self._validatePostId(post_id)
 
-		file_on_disk = f'images/{uuid4().hex()}_{filename}'.encode()
+		file_on_disk = f'images/{uuid4().hex}_{filename}'.encode()
 		content_type = None
 
 		with open(file_on_disk, 'wb') as file :
