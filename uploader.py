@@ -126,7 +126,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 		if ratio < 1 :
 			output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
-			return image.resize(width=output_size[0], height=output_size[1], filter=self.filter_function)
+			image.resize(width=output_size[0], height=output_size[1], filter=self.filter_function)
 
 		return image
 
