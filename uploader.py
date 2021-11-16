@@ -189,7 +189,7 @@ class Uploader(SqlInterface, B2Interface) :
 				url = f'{post_id}/{filename}'
 
 				# upload fullsize
-				self.b2_upload(open(file_on_disk, 'rb'), url, content_type=content_type)
+				self.b2_upload(open(file_on_disk, 'rb').read(), url, content_type=content_type)
 
 
 				# upload thumbnails
