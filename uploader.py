@@ -219,6 +219,8 @@ class Uploader(SqlInterface, B2Interface) :
 
 				transaction.commit()
 
+			delete_file(file_on_disk)
+
 			return {
 				'user_id': user.user_id,
 				'post_id': post_id,
