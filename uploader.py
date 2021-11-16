@@ -196,7 +196,7 @@ class Uploader(SqlInterface, B2Interface) :
 				thumbnails = { }
 				thumbnail_data = None
 
-				for size in range(self.thumbnail_sizes) :
+				for size in self.thumbnail_sizes :
 					image = self.convert_image(Image(file=open(file_on_disk, 'rb')), size)
 					image.compression_quality = self.output_quality
 					thumbnail_data = BytesIO()
