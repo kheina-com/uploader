@@ -1,5 +1,6 @@
-from kh_common.server import NoContentResponse, Response, Request, ServerApp
+from kh_common.server import NoContentResponse, Request, ServerApp
 from models import CreateRequest, PrivacyRequest, UpdateRequest
+from fastapi.responses import UJSONResponse
 from fastapi import File, Form, UploadFile
 from uploader import Uploader
 from typing import Optional
@@ -21,15 +22,13 @@ async def v1CreatePost(req: Request, body: CreateRequest) :
 	"""
 
 	if any(body.dict().values()) :
-		return UJSONResponse(
-			uploader.createPostWithFields(
-				req.user,
-				body.reply_to,
-				body.title,
-				body.description,
-				body.privacy,
-				body.rating,
-			)
+		return uploader.createPostWithFields(
+			req.user,
+			body.reply_to,
+			body.title,
+			body.description,
+			body.privacy,
+			body.rating,
 		)
 
 	return uploader.createPost(req.user.user_id)
@@ -60,7 +59,7 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Op
 		}, status_code=422)
 
 	return await uploader.uploadImage(
-		req.user.user_id,
+		req.user,
 		file.file.read(),
 		file.filename,
 		post_id=post_id,
@@ -78,7 +77,7 @@ async def v1UpdatePost(req: Request, body: UpdateRequest) :
 	"""
 
 	if uploader.updatePostMetadata(
-		req.user.user_id,
+		req.user,
 		body.post_id,
 		body.title,
 		body.description,
