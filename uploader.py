@@ -232,7 +232,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	@HttpErrorHandler('updating post metadata')
-	def updatePostMetadata(self, user_id: int, post_id: str, title:str=None, description:str=None, privacy:Privacy=None, rating:Rating=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
+	def updatePostMetadata(self, user: KhUser, post_id: str, title:str=None, description:str=None, privacy:Privacy=None, rating:Rating=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
 		self._validatePostId(post_id)
 		self._validateTitle(title)
 		self._validateDescription(description)
@@ -268,11 +268,11 @@ class Uploader(SqlInterface, B2Interface) :
 				WHERE uploader = %s
 					AND post_id = %s;
 				""",
-				params + [user_id, post_id],
+				params + [user.user_id, post_id],
 			)
 
 			if privacy :
-				self._update_privacy(user_id, post_id, privacy, transaction=t, commit=False)
+				self._update_privacy(user.user_id, post_id, privacy, transaction=t, commit=False)
 			
 			t.commit()
 
