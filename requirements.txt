@@ -1,4 +1,4 @@
-git+https://github.com/kheina-com/kh-common.git@fix-telegram-recv-sleep#egg=kh_common>=0.4.0
+kh-common>=0.4.4
 aiofiles>=0.5.0
 psycopg2-binary>=2.8.5
 ujson>=3.0.0
@@ -8,3 +8,5 @@ gunicorn>=20.0.4
 pillow>=7.2.0
 python-multipart>=0.0.5
 fastapi>=0.61.1
+PyExifTool>=0.4.11
+Wand>=0.6.7

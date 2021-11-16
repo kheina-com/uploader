@@ -1,21 +1,19 @@
-from kh_common.exceptions.http_error import BadRequest, Forbidden, HttpError, HttpErrorHandler, InternalServerError, NotFound
+from kh_common.exceptions.http_error import BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
 from kh_common.scoring import confidence, controversial as calc_cont, hot as calc_hot
 from kh_common.sql import SqlInterface, Transaction
-from kh_common.config.repo import name, short_hash
-from asyncio import coroutine, ensure_future
 from kh_common.backblaze import B2Interface
 from kh_common.auth import KhUser, Scope
-from kh_common.logging import getLogger
 from kh_common.base64 import b64encode
+from os import remove as delete_file
 from typing import Dict, List, Union
 from models import Privacy, Rating
 from secrets import token_bytes
+from exiftool import ExifTool
+from wand.image import Image
 from io import BytesIO
 from math import floor
 from uuid import uuid4
 from time import time
-from PIL import Image
-
 
 class Uploader(SqlInterface, B2Interface) :
 
@@ -30,9 +28,9 @@ class Uploader(SqlInterface, B2Interface) :
 			800,
 			1200,
 		]
-		self.emoji_size: int = 128
+		self.emoji_size: int = 256
 		self.output_quality: int = 85
-		self.resample_function: int = Image.BICUBIC
+		self.filter_function: str = 'catrom'
 
 
 	def _validatePostId(self, post_id: str) :
@@ -122,174 +120,104 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	async def uploadJpegBackup(self, post_id: str, thumbnail_data: BytesIO) :
-		jpeg = Image.open(thumbnail_data)
-
-		if jpeg.mode != 'RGB' :
-			background = Image.new('RGBA', jpeg.size, (255,255,255))
-			jpeg = Image.alpha_composite(background, jpeg.convert('RGBA'))
-			del background
-
-		jpeg = jpeg.convert('RGB')
-		thumbnail_data = BytesIO()
-		jpeg.save(thumbnail_data, format='JPEG', quality=85)
-
-		thumbnail_url = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg'
-
-		self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['jpeg'])
-
-		return thumbnail_url
-
-
 	def convert_image(self, image: Image, size: int) -> Image :
 		long_side = 0 if image.size[0] > image.size[1] else 1
 		ratio = size / image.size[long_side]
 
 		if ratio < 1 :
 			output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
-			return image.resize(output_size, resample=self.resample_function)
+			return image.resize(width=output_size[0], height=output_size[1], filter=self.filter_function)
 
 		return image
-
-	def image_to_bytes(self, image: Image, format: str = None, quality: int = None) -> bytes :
-		image_data = BytesIO()
-		image.save(image_data, format=format or image.format, quality=quality or self.output_quality)
-		return image_data.getvalue()
 
 
 	async def uploadImage(self, user: KhUser, file_data: bytes, filename: str, post_id:Union[str, None]=None, emoji_name:str=None) -> Dict[str, Union[str, int, List[str]]] :
 		if post_id :
 			self._validatePostId(post_id)
 
-		try :
-			# we can't just open this once cause PIL sucks
-			Image.open(BytesIO(file_data)).verify()
+		file_on_disk = f'images/{uuid4().hex()}_{filename}'.encode()
+		content_type = None
 
-		except Exception as e :
-			refid: str = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'user_id': user.user_id,
-				'filename': filename,
-				'error': str(e),
-			}
-			self.logger.warning(logdata)
-			raise BadRequest('user image failed validation.', logdata=logdata)
+		with open(file_on_disk, 'wb') as file :
+			file.write(file_data)
 
-		url = None
-		thumbnails = None
-		logdata = None
+		del file_data
 
 		try :
+			with ExifTool() as et :
+				content_type = et.get_tag('File:MIMEType', file_on_disk)
+				et.execute(b'-overwrite_original_in_place', b'-ALL=', file_on_disk)
 
-			image = Image.open(BytesIO(file_data))
-			content_type: str = f'image/{image.format.lower()}'
+		except :
+			delete_file(file_on_disk)
+			raise InternalServerError('Failed to strip file metadata.')
 
-			if content_type != self._get_mime_from_filename(filename) :
-				raise BadRequest('file extension does not match file type.')
+		if content_type != self._get_mime_from_filename(filename) :
+			raise BadRequest('file extension does not match file type.')
 
-			stripped_image = Image.new(image.mode, image.size)
-			stripped_image.putdata(image.getdata())
-			image = stripped_image
-			del stripped_image
+		try :
+			with self.transaction() as transaction :
+				old_filename: List[str] = transaction.query("""
+					SELECT posts.filename from kheina.public.posts
+					WHERE posts.post_id = %s
+					""",
+					(post_id,),
+					fetch_one=True,
+				)
 
-			file_data = BytesIO()
-			file_data.name = filename
-			image.save(file_data)
-			file_data = file_data.getvalue()
+				data: List[str] = transaction.query("""
+					CALL kheina.public.user_upload_file(%s, %s, %s, %s);
+					""",
+					(
+						user.user_id,
+						post_id,
+						content_type,
+						filename,
+					),
+					fetch_one=True,
+				)
 
-			old_filename: List[str] = self.query("""
-				SELECT posts.filename from kheina.public.posts
-				WHERE posts.post_id = %s
-				""",
-				(post_id,),
-				fetch_one=True,
-			)
+				if not data :
+					raise Forbidden('the post you are trying to upload to does not belong to this account.')
 
-			data: List[str] = self.query("""
-				CALL kheina.public.user_upload_file(%s, %s, %s, %s);
-				""",
-				(
-					user.user_id,
-					post_id,
-					content_type,
-					filename,
-				),
-				commit=True,
-				fetch_one=True,
-			)
+				if post_id and old_filename and old_filename[0] :
+					if not await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}') :
+						self.logger.error(f'failed to delete old image: {post_id}/{old_filename[0]}')
 
-			if not data :
-				raise Forbidden('the post you are trying to upload to does not belong to this account.')
+				post_id = data[0]
 
-			if post_id and old_filename and old_filename[0] :
-				if not await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}') :
-					self.logger.error(f'failed to delete old image: {post_id}/{old_filename[0]}')
+				url = f'{post_id}/{filename}'
 
-			post_id = data[0]
-
-			url = f'{post_id}/{filename}'
-			logdata = {
-				'url': url,
-				'filename': filename,
-				'image': 'full size',
-				'color': image.mode,
-				'type': image.format,
-				'animated': getattr(image, 'is_animated', False),
-			}
-
-			# upload the raw file
-			self.b2_upload(file_data, url, content_type=content_type)
-
-			# render all thumbnails and queue them for upload async.
-			# I'm back, async doesn't work with large files.
-			long_side = 0 if image.size[0] > image.size[1] else 1
-
-			image = image.convert('RGBA')
-
-			if emoji_name :
-				if not await user.verify_scope(Scope.admin) :
-					handle: List[str] = self.query("""
-						SELECT users.handle from kheina.public.users
-						WHERE users.user_id = %s
-						""",
-						(user.user_id,),
-						fetch_one=True,
-					)
-					emoji_name = f'{handle[0]}-{emoji_name}'
-
-				emoji = self.convert_image(image, self.emoji_size)
-
-				self.b2_upload(self.image_to_bytes(emoji, format='WEBP', quality=100), f'emoji/{emoji_name}.webp', self.mime_types['webp'])
+				# upload fullsize
+				self.b2_upload(open(file_on_disk, 'rb'), url, content_type=content_type)
 
 
-			thumbnails = { }
+				# upload thumbnails
+				thumbnails = { }
+				thumbnail_data = None
 
-			thumbnail_data = None
-			max_size = False
-			for size in self.thumbnail_sizes :
-				thumbnail_url = f'{post_id}/thumbnails/{size}.webp'
-				thumbnails[size] = thumbnail_url
-				logdata['image'] = f'thumbnail {size}'
-				logdata['url'] = thumbnail_url
-				ratio = size / image.size[long_side]
-
-				if ratio < 1 :
-					# resize and output
+				for size in range(self.thumbnail_sizes) :
+					image = self.convert_image(Image(file=open(file_on_disk, 'rb')), size)
+					image.compression_quality = self.output_quality
 					thumbnail_data = BytesIO()
-					output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
-					image.resize(output_size, resample=self.resample_function).save(thumbnail_data, format='WEBP', quality=85)
+					image.save(file=thumbnail_data)
+					del image
+					self.b2_upload(thumbnail_data.getvalue(), f'{post_id}/thumbnails/{size}.webp', self.mime_types['webp'])
+					del thumbnail_data
 
-				elif not thumbnail_data or not max_size :
-					# just convert what we have
-					thumbnail_data = BytesIO()
-					image.save(thumbnail_data, format='WEBP', quality=85)
-					max_size = True
+				# jpeg thumbnail
+				image = self.convert_image(Image(file=open(file_on_disk, 'rb')), self.thumbnail_sizes[-1]).convert('jpeg')
+				image.compression_quality = self.output_quality
+				thumbnail_data = BytesIO()
+				image.save(file=thumbnail_data)
+				del image
+				self.b2_upload(thumbnail_data.getvalue(), f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg', self.mime_types['jpeg'])
+				del thumbnail_data
 
-				self.b2_upload(thumbnail_data.getvalue(), thumbnail_url, self.mime_types['webp'])
+				# emoji
+				# (later)
 
-			# finally, the jpeg backup
-			thumbnails['jpeg'] = await self.uploadJpegBackup(post_id, thumbnail_data)
+				transaction.commit()
 
 			return {
 				'user_id': user.user_id,
@@ -298,21 +226,9 @@ class Uploader(SqlInterface, B2Interface) :
 				'thumbnails': thumbnails,
 			}
 
-		except Exception as e :
-			refid: str = uuid4().hex
-			self.logger.critical({
-					'refid': refid,
-					'error': str(e),
-					'message': 'an unexpected error occurred while uploading image to backblaze.',
-					'thumbnails': thumbnails,
-					**logdata,
-				},
-				exc_info=e,
-			)
-			raise InternalServerError(
-				'an unexpected error occurred while uploading image to cdn.',
-				refid=refid,
-			)
+		except :
+			delete_file(file_on_disk)
+			raise
 
 
 	@HttpErrorHandler('updating post metadata')
