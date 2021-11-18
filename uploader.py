@@ -1,19 +1,29 @@
-from kh_common.exceptions.http_error import BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
+from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
 from kh_common.scoring import confidence, controversial as calc_cont, hot as calc_hot
+from kh_common.config.constants import posts_host, users_host
+from models import Coordinates, Post, Privacy, Rating
 from kh_common.sql import SqlInterface, Transaction
+from aiohttp import ClientResponseError, request
 from kh_common.backblaze import B2Interface
-from kh_common.auth import KhUser, Scope
+from kh_common.models.user import User
 from kh_common.base64 import b64encode
+from kh_common.gateway import Gateway
 from os import remove as delete_file
 from typing import Dict, List, Union
-from models import Privacy, Rating
+from kh_common.auth import KhUser
+from asyncio import ensure_future
 from secrets import token_bytes
+from urllib.parse import quote
 from exiftool import ExifTool
 from wand.image import Image
 from io import BytesIO
 from math import floor
 from uuid import uuid4
 from time import time
+
+Posts = Gateway(posts_host + '/v1/post/{post_id}', Post)
+Users = Gateway(users_host + '/v1/fetch_self', User)
+
 
 class Uploader(SqlInterface, B2Interface) :
 
@@ -29,6 +39,7 @@ class Uploader(SqlInterface, B2Interface) :
 			1200,
 		]
 		self.emoji_size: int = 256
+		self.icon_size: int = 800
 		self.output_quality: int = 85
 		self.filter_function: str = 'catrom'
 
@@ -131,6 +142,13 @@ class Uploader(SqlInterface, B2Interface) :
 		return image
 
 
+	def get_image_data(self, image: Image) -> bytes :
+		image.compression_quality = self.output_quality
+		image_data = BytesIO()
+		image.save(file=image_data)
+		return image_data.getvalue()
+
+
 	async def uploadImage(self, user: KhUser, file_data: bytes, filename: str, post_id:Union[str, None]=None, emoji_name:str=None) -> Dict[str, Union[str, int, List[str]]] :
 		if post_id :
 			self._validatePostId(post_id)
@@ -197,22 +215,14 @@ class Uploader(SqlInterface, B2Interface) :
 				thumbnail_data = None
 
 				for size in self.thumbnail_sizes :
-					image = self.convert_image(Image(file=open(file_on_disk, 'rb')), size)
-					image.compression_quality = self.output_quality
-					thumbnail_data = BytesIO()
-					image.save(file=thumbnail_data)
-					del image
-					self.b2_upload(thumbnail_data.getvalue(), f'{post_id}/thumbnails/{size}.webp', self.mime_types['webp'])
-					del thumbnail_data
+					with Image(file=open(file_on_disk, 'rb')) as image :
+						image = self.convert_image(image, size)
+						self.b2_upload(self.get_image_data(image), f'{post_id}/thumbnails/{size}.webp', self.mime_types['webp'])
 
 				# jpeg thumbnail
-				image = self.convert_image(Image(file=open(file_on_disk, 'rb')), self.thumbnail_sizes[-1]).convert('jpeg')
-				image.compression_quality = self.output_quality
-				thumbnail_data = BytesIO()
-				image.save(file=thumbnail_data)
-				del image
-				self.b2_upload(thumbnail_data.getvalue(), f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg', self.mime_types['jpeg'])
-				del thumbnail_data
+				with Image(file=open(file_on_disk, 'rb')) as image :
+					image = self.convert_image(image, self.thumbnail_sizes[-1]).convert('jpeg')
+					self.b2_upload(self.get_image_data(image), f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg', self.mime_types['jpeg'])
 
 				# emoji
 				# (later)
@@ -349,3 +359,61 @@ class Uploader(SqlInterface, B2Interface) :
 	@HttpErrorHandler('updating post privacy')
 	def updatePrivacy(self, user_id: int, post_id: str, privacy: Privacy) :
 		self._update_privacy(user_id, post_id, privacy)
+
+
+	@HttpErrorHandler('setting user icon')
+	async def setIcon(self, user: KhUser, post_id: str, coordinates: Coordinates) :
+		if coordinates.width != coordinates.height :
+			raise BadRequest(f'icons must be square. width({coordinates.width}) != height({coordinates.height})')
+
+		post = ensure_future(Posts(post_id=post_id))
+		user = ensure_future(Users(auth=user.token.token_string))
+		image = None
+
+		post = await post
+
+		try :
+			async with request(
+				'GET',
+				f'https://cdn.kheina.com/file/kheina-content/{post_id}/{quote(post.filename)}',
+				raise_for_status=True,
+			) as response :
+				image = Image(blob=await response.read())
+
+		except ClientResponseError as e :
+			raise BadGateway('unable to retrieve image from B2.', inner_exception=str(e))
+
+
+		# upload new icon
+		image.crop(**coordinates.dict())
+		self.convert_image(image, self.icon_size)
+
+		user = await user
+
+		self.b2_upload(self.get_image_data(image), f'{post_id}/{user.handle}.webp', self.mime_types['webp'])
+
+		image.convert('jpeg')
+		self.b2_upload(self.get_image_data(image), f'{post_id}/{user.handle}.jpg', self.mime_types['jpeg'])
+
+		image.close()
+
+
+		# update db to point to new icon
+		data = await self.query_async("""
+			UPDATE kheina.public.users AS users
+				SET icon = %s
+			FROM (SELECT icon FROM kheina.public.users WHERE users.handle = %s) AS old
+			WHERE users.handle = old.handle
+				AND users.handle = %s
+			RETURNING old.icon;
+			""",
+			(post_id, user.handle, user.handle),
+			fetch_one=True,
+			commit=True,
+		)
+
+		post_id = data[0]
+
+		# cleanup old icons
+		await self.b2_delete_file_async(post_id, f'{user.handle}.webp')
+		await self.b2_delete_file_async(post_id, f'{user.handle}.jpg')

@@ -1,5 +1,5 @@
 from kh_common.server import NoContentResponse, Request, ServerApp
-from models import CreateRequest, PrivacyRequest, UpdateRequest
+from models import CreateRequest, IconRequest, PrivacyRequest, UpdateRequest
 from fastapi.responses import UJSONResponse
 from fastapi import File, Form, UploadFile
 from uploader import Uploader
@@ -16,7 +16,7 @@ async def shutdown() :
 
 
 @app.post('/v1/create_post')
-async def v1CreatePost(req: Request, body: CreateRequest) :
+def v1CreatePost(req: Request, body: CreateRequest) :
 	"""
 	only auth required
 	"""
@@ -67,7 +67,7 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Op
 
 
 @app.post('/v1/update_post')
-async def v1UpdatePost(req: Request, body: UpdateRequest) :
+def v1UpdatePost(req: Request, body: UpdateRequest) :
 	"""
 	{
 		"post_id": str,
@@ -88,7 +88,7 @@ async def v1UpdatePost(req: Request, body: UpdateRequest) :
 
 
 @app.post('/v1/update_privacy')
-async def v1UpdatePrivacy(req: Request, body: PrivacyRequest) :
+def v1UpdatePrivacy(req: Request, body: PrivacyRequest) :
 	"""
 	{
 		"post_id": str,
@@ -98,6 +98,12 @@ async def v1UpdatePrivacy(req: Request, body: PrivacyRequest) :
 
 	if uploader.updatePrivacy(req.user.user_id, body.post_id, body.privacy) :
 		return NoContentResponse
+
+
+@app.post('/v1/set_icon')
+async def v1SetIcon(req: Request, body: IconRequest) :
+	await uploader.setIcon(req.user, body.post_id, body.coordinates)
+	return NoContentResponse
 
 
 if __name__ == '__main__' :
