@@ -412,8 +412,7 @@ class Uploader(SqlInterface, B2Interface) :
 			commit=True,
 		)
 
-		post_id = data[0]
-
 		# cleanup old icons
-		await self.b2_delete_file_async(post_id, f'{user.handle}.webp')
-		await self.b2_delete_file_async(post_id, f'{user.handle}.jpg')
+		if post_id != data[0] :
+			await self.b2_delete_file_async(data[0], f'{user.handle}.webp')
+			await self.b2_delete_file_async(data[0], f'{user.handle}.jpg')
