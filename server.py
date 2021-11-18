@@ -106,6 +106,12 @@ async def v1SetIcon(req: Request, body: IconRequest) :
 	return NoContentResponse
 
 
+@app.post('/v1/set_banner')
+async def v1SetBanner(req: Request, body: IconRequest) :
+	await uploader.setBanner(req.user, body.post_id, body.coordinates)
+	return NoContentResponse
+
+
 if __name__ == '__main__' :
 	from uvicorn.main import run
 	run(app, host='0.0.0.0', port=5001)

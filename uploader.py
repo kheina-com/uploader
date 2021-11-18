@@ -40,6 +40,7 @@ class Uploader(SqlInterface, B2Interface) :
 		]
 		self.emoji_size: int = 256
 		self.icon_size: int = 400
+		self.banner_size: int = 600
 		self.output_quality: int = 85
 		self.filter_function: str = 'catrom'
 
@@ -390,10 +391,10 @@ class Uploader(SqlInterface, B2Interface) :
 
 		user = await user
 
-		self.b2_upload(self.get_image_data(image), f'{post_id}/{user.handle}.webp', self.mime_types['webp'])
+		self.b2_upload(self.get_image_data(image), f'{post_id}/icons/{user.handle}.webp', self.mime_types['webp'])
 
 		image.convert('jpeg')
-		self.b2_upload(self.get_image_data(image), f'{post_id}/{user.handle}.jpg', self.mime_types['jpeg'])
+		self.b2_upload(self.get_image_data(image), f'{post_id}/icons/{user.handle}.jpg', self.mime_types['jpeg'])
 
 		image.close()
 
@@ -414,5 +415,63 @@ class Uploader(SqlInterface, B2Interface) :
 
 		# cleanup old icons
 		if post_id != data[0] :
-			await self.b2_delete_file_async(data[0], f'{user.handle}.webp')
-			await self.b2_delete_file_async(data[0], f'{user.handle}.jpg')
+			await self.b2_delete_file_async(data[0], f'icons/{user.handle}.webp')
+			await self.b2_delete_file_async(data[0], f'icons/{user.handle}.jpg')
+
+
+	@HttpErrorHandler('setting user banner')
+	async def setBanner(self, user: KhUser, post_id: str, coordinates: Coordinates) :
+		if round(coordinates.width / 3) != coordinates.height :
+			raise BadRequest(f'banners must be a 3x:1 rectangle. round(width / 3)({round(coordinates.width / 3)}) != height({coordinates.height})')
+
+		post = ensure_future(Posts(post_id=post_id))
+		user = ensure_future(Users(auth=user.token.token_string))
+		image = None
+
+		post = await post
+
+		try :
+			async with request(
+				'GET',
+				f'https://cdn.kheina.com/file/kheina-content/{post_id}/{quote(post.filename)}',
+				raise_for_status=True,
+			) as response :
+				image = Image(blob=await response.read())
+
+		except ClientResponseError as e :
+			raise BadGateway('unable to retrieve image from B2.', inner_exception=str(e))
+
+
+		# upload new banner
+		image.crop(**coordinates.dict())
+		if image.size[0] > self.banner_size * 3 or image.size[1] > self.banner_size :
+			image.resize(width=self.banner_size * 3, height=self.banner_size, filter=self.filter_function)
+
+		user = await user
+
+		self.b2_upload(self.get_image_data(image), f'{post_id}/banners/{user.handle}.webp', self.mime_types['webp'])
+
+		image.convert('jpeg')
+		self.b2_upload(self.get_image_data(image), f'{post_id}/banners/{user.handle}.jpg', self.mime_types['jpeg'])
+
+		image.close()
+
+
+		# update db to point to new banner
+		data = await self.query_async("""
+			UPDATE kheina.public.users AS users
+				SET banner = %s
+			FROM (SELECT banner, handle FROM kheina.public.users WHERE users.handle = %s) AS old
+			WHERE users.handle = old.handle
+				AND users.handle = %s
+			RETURNING old.banner;
+			""",
+			(post_id, user.handle, user.handle),
+			fetch_one=True,
+			commit=True,
+		)
+
+		# cleanup old banners
+		if post_id != data[0] :
+			await self.b2_delete_file_async(data[0], f'banners/{user.handle}.webp')
+			await self.b2_delete_file_async(data[0], f'banners/{user.handle}.jpg')
