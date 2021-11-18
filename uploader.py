@@ -402,7 +402,7 @@ class Uploader(SqlInterface, B2Interface) :
 		data = await self.query_async("""
 			UPDATE kheina.public.users AS users
 				SET icon = %s
-			FROM (SELECT icon FROM kheina.public.users WHERE users.handle = %s) AS old
+			FROM (SELECT icon, handle FROM kheina.public.users WHERE users.handle = %s) AS old
 			WHERE users.handle = old.handle
 				AND users.handle = %s
 			RETURNING old.icon;
