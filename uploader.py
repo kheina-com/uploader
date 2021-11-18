@@ -39,7 +39,7 @@ class Uploader(SqlInterface, B2Interface) :
 			1200,
 		]
 		self.emoji_size: int = 256
-		self.icon_size: int = 800
+		self.icon_size: int = 400
 		self.output_quality: int = 85
 		self.filter_function: str = 'catrom'
 
