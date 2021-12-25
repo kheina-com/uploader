@@ -390,11 +390,12 @@ class Uploader(SqlInterface, B2Interface) :
 		self.convert_image(image, self.icon_size)
 
 		user = await user
+		handle = user.handle.lower()
 
-		self.b2_upload(self.get_image_data(image), f'{post_id}/icons/{user.handle}.webp', self.mime_types['webp'])
+		self.b2_upload(self.get_image_data(image), f'{post_id}/icons/{handle}.webp', self.mime_types['webp'])
 
 		image.convert('jpeg')
-		self.b2_upload(self.get_image_data(image), f'{post_id}/icons/{user.handle}.jpg', self.mime_types['jpeg'])
+		self.b2_upload(self.get_image_data(image), f'{post_id}/icons/{handle}.jpg', self.mime_types['jpeg'])
 
 		image.close()
 
@@ -403,20 +404,20 @@ class Uploader(SqlInterface, B2Interface) :
 		data = await self.query_async("""
 			UPDATE kheina.public.users AS users
 				SET icon = %s
-			FROM (SELECT icon, handle FROM kheina.public.users WHERE users.handle = %s) AS old
+			FROM (SELECT icon, handle FROM kheina.public.users WHERE users.handle = LOWER(%s)) AS old
 			WHERE users.handle = old.handle
-				AND users.handle = %s
+				AND users.handle = LOWER(%s)
 			RETURNING old.icon;
 			""",
-			(post_id, user.handle, user.handle),
+			(post_id, handle, handle),
 			fetch_one=True,
 			commit=True,
 		)
 
 		# cleanup old icons
 		if post_id != data[0] :
-			await self.b2_delete_file_async(data[0], f'icons/{user.handle}.webp')
-			await self.b2_delete_file_async(data[0], f'icons/{user.handle}.jpg')
+			await self.b2_delete_file_async(data[0], f'icons/{handle}.webp')
+			await self.b2_delete_file_async(data[0], f'icons/{handle}.jpg')
 
 
 	@HttpErrorHandler('setting user banner')
@@ -448,11 +449,12 @@ class Uploader(SqlInterface, B2Interface) :
 			image.resize(width=self.banner_size * 3, height=self.banner_size, filter=self.filter_function)
 
 		user = await user
+		handle = user.handle.lower()
 
-		self.b2_upload(self.get_image_data(image), f'{post_id}/banners/{user.handle}.webp', self.mime_types['webp'])
+		self.b2_upload(self.get_image_data(image), f'{post_id}/banners/{handle}.webp', self.mime_types['webp'])
 
 		image.convert('jpeg')
-		self.b2_upload(self.get_image_data(image), f'{post_id}/banners/{user.handle}.jpg', self.mime_types['jpeg'])
+		self.b2_upload(self.get_image_data(image), f'{post_id}/banners/{handle}.jpg', self.mime_types['jpeg'])
 
 		image.close()
 
@@ -461,17 +463,17 @@ class Uploader(SqlInterface, B2Interface) :
 		data = await self.query_async("""
 			UPDATE kheina.public.users AS users
 				SET banner = %s
-			FROM (SELECT banner, handle FROM kheina.public.users WHERE users.handle = %s) AS old
+			FROM (SELECT banner, handle FROM kheina.public.users WHERE users.handle = LOWER(%s)) AS old
 			WHERE users.handle = old.handle
-				AND users.handle = %s
+				AND users.handle = LOWER(%s)
 			RETURNING old.banner;
 			""",
-			(post_id, user.handle, user.handle),
+			(post_id, handle, handle),
 			fetch_one=True,
 			commit=True,
 		)
 
 		# cleanup old banners
 		if post_id != data[0] :
-			await self.b2_delete_file_async(data[0], f'banners/{user.handle}.webp')
-			await self.b2_delete_file_async(data[0], f'banners/{user.handle}.jpg')
+			await self.b2_delete_file_async(data[0], f'banners/{handle}.webp')
+			await self.b2_delete_file_async(data[0], f'banners/{handle}.jpg')
