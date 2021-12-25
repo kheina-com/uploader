@@ -200,7 +200,7 @@ class Uploader(SqlInterface, B2Interface) :
 					raise Forbidden('the post you are trying to upload to does not belong to this account.')
 
 				if post_id and old_filename and old_filename[0] :
-					if not await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}') :
+					if not await self.b2_delete_file_async(post_id, old_filename[0]) :
 						self.logger.error(f'failed to delete old image: {post_id}/{old_filename[0]}')
 
 				post_id = data[0]
