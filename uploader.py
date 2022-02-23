@@ -203,7 +203,7 @@ class Uploader(SqlInterface, B2Interface) :
 								height = %s
 						WHERE posts.post_id = %s
 						""",
-						image.size,
+						(*image.size, post_id),
 						fetch_one=True,
 					)
 
