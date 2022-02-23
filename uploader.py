@@ -204,7 +204,6 @@ class Uploader(SqlInterface, B2Interface) :
 						WHERE posts.post_id = %s
 						""",
 						(*image.size, post_id),
-						fetch_one=True,
 					)
 
 				if not data :
