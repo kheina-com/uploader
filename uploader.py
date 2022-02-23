@@ -196,6 +196,17 @@ class Uploader(SqlInterface, B2Interface) :
 					fetch_one=True,
 				)
 
+				with Image(file=open(file_on_disk, 'rb')) as image :
+					transaction.query("""
+						UPDATE kheina.public.posts
+							SET width = %s,
+								height = %s
+						WHERE posts.post_id = %s
+						""",
+						image.size,
+						fetch_one=True,
+					)
+
 				if not data :
 					raise Forbidden('the post you are trying to upload to does not belong to this account.')
 
@@ -213,19 +224,25 @@ class Uploader(SqlInterface, B2Interface) :
 
 				# upload thumbnails
 				thumbnails = { }
-				thumbnail_data = None
 
 				for size in self.thumbnail_sizes :
+					url: str = f'{post_id}/thumbnails/{size}.webp'
 					with Image(file=open(file_on_disk, 'rb')) as image :
 						image = self.convert_image(image, size)
-						self.b2_upload(self.get_image_data(image), f'{post_id}/thumbnails/{size}.webp', self.mime_types['webp'])
+						self.b2_upload(self.get_image_data(image), url, self.mime_types['webp'])
+
+					thumbnails[size] = url
 
 				# jpeg thumbnail
 				with Image(file=open(file_on_disk, 'rb')) as image :
+					url: str = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg'
 					image = self.convert_image(image, self.thumbnail_sizes[-1]).convert('jpeg')
-					self.b2_upload(self.get_image_data(image), f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg', self.mime_types['jpeg'])
+					self.b2_upload(self.get_image_data(image), url, self.mime_types['jpeg'])
+
+					thumbnails[size] = url
 
 				# emoji
+				emoji: str = None
 				# (later)
 
 				transaction.commit()
@@ -233,9 +250,9 @@ class Uploader(SqlInterface, B2Interface) :
 			delete_file(file_on_disk)
 
 			return {
-				'user_id': user.user_id,
 				'post_id': post_id,
 				'url': url,
+				'emoji': emoji,
 				'thumbnails': thumbnails,
 			}
 
@@ -285,9 +302,10 @@ class Uploader(SqlInterface, B2Interface) :
 			)
 
 			if privacy :
-				self._update_privacy(user.user_id, post_id, privacy, transaction=t, commit=False)
-			
-			t.commit()
+				self._update_privacy(user.user_id, post_id, privacy, transaction=t, commit=True)
+
+			else :
+				t.commit()
 
 		return True
 
