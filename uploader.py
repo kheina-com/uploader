@@ -197,6 +197,7 @@ class Uploader(SqlInterface, B2Interface) :
 				)
 
 				with Image(file=open(file_on_disk, 'rb')) as image :
+					# optimize
 					transaction.query("""
 						UPDATE kheina.public.posts
 							SET width = %s,
@@ -432,7 +433,7 @@ class Uploader(SqlInterface, B2Interface) :
 		)
 
 		# cleanup old icons
-		if post_id != data[0] :
+		if data and post_id != data[0] :
 			await self.b2_delete_file_async(data[0], f'icons/{handle}.webp')
 			await self.b2_delete_file_async(data[0], f'icons/{handle}.jpg')
 
