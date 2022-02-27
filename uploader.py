@@ -420,20 +420,20 @@ class Uploader(SqlInterface, B2Interface) :
 
 		# update db to point to new icon
 		data = await self.query_async("""
-			SELECT icon, handle
-			FROM kheina.public.users
-			WHERE users.handle = LOWER(%s);
 			UPDATE kheina.public.users AS users
 				SET icon = %s
-			WHERE users.handle = LOWER(%s);
+			FROM (SELECT icon, handle FROM kheina.public.users WHERE LOWER(users.handle) = LOWER(%s)) AS old
+			WHERE users.handle = old.handle
+				AND LOWER(users.handle) = LOWER(%s)
+			RETURNING old.icon;
 			""",
-			(handle, post_id, handle),
+			(post_id, handle, handle),
 			fetch_one=True,
 			commit=True,
 		)
 
 		# cleanup old icons
-		if data and post_id != data[0] :
+		if post_id != data[0] :
 			await self.b2_delete_file_async(data[0], f'icons/{handle}.webp')
 			await self.b2_delete_file_async(data[0], f'icons/{handle}.jpg')
 
