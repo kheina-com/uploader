@@ -420,12 +420,12 @@ class Uploader(SqlInterface, B2Interface) :
 
 		# update db to point to new icon
 		data = await self.query_async("""
+			SELECT icon, handle
+			FROM kheina.public.users
+			WHERE users.handle = LOWER(%s);
 			UPDATE kheina.public.users AS users
 				SET icon = %s
-			FROM (SELECT icon, handle FROM kheina.public.users WHERE users.handle = LOWER(%s)) AS old
-			WHERE users.handle = old.handle
-				AND users.handle = LOWER(%s)
-			RETURNING old.icon;
+			WHERE users.handle = LOWER(%s);
 			""",
 			(post_id, handle, handle),
 			fetch_one=True,
