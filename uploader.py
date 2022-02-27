@@ -427,7 +427,7 @@ class Uploader(SqlInterface, B2Interface) :
 				SET icon = %s
 			WHERE users.handle = LOWER(%s);
 			""",
-			(post_id, handle, handle),
+			(handle, post_id, handle),
 			fetch_one=True,
 			commit=True,
 		)
