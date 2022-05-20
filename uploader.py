@@ -8,7 +8,6 @@ from kh_common.backblaze import B2Interface
 from kh_common.models.user import User
 from kh_common.base64 import b64encode
 from kh_common.gateway import Gateway
-from os import remove as delete_file
 from typing import Dict, List, Union
 from kh_common.auth import KhUser
 from asyncio import ensure_future
@@ -20,9 +19,10 @@ from io import BytesIO
 from math import floor
 from uuid import uuid4
 from time import time
+from os import remove
 
 Posts = Gateway(posts_host + '/v1/post/{post_id}', Post)
-Users = Gateway(users_host + '/v1/fetch_self', User)
+Users = Gateway(users_host + '/v1/fetch_self', User)		
 
 
 class Uploader(SqlInterface, B2Interface) :
@@ -44,6 +44,14 @@ class Uploader(SqlInterface, B2Interface) :
 		self.banner_size: int = 600
 		self.output_quality: int = 85
 		self.filter_function: str = 'catrom'
+
+
+	def delete_file(self: 'Uploader', path: str) :
+		try :
+			remove(path)
+
+		except FileNotFoundError :
+			self.logger.exception(f'failed to delete local file, as it does not exist. path: {path}')
 
 
 	def _validatePostId(self: 'Uploader', post_id: str) :
@@ -183,7 +191,7 @@ class Uploader(SqlInterface, B2Interface) :
 				et.execute(b'-overwrite_original_in_place', b'-ALL=', file_on_disk)
 
 		except :
-			delete_file(file_on_disk)
+			self.delete_file(file_on_disk)
 			raise InternalServerError('Failed to strip file metadata.')
 
 		if content_type != self._get_mime_from_filename(filename) :
@@ -235,8 +243,8 @@ class Uploader(SqlInterface, B2Interface) :
 
 				if web_resize :
 					with Image(file=open(file_on_disk, 'rb')) as image :
-						resized: Image = self.convert_image(image, self.web_size)
-						fullsize_image = self.get_image_data(resized, compress = False)
+						image: Image = self.convert_image(image, self.web_size)
+						fullsize_image = self.get_image_data(image, compress = False)
 					
 					dot_index: int = url.rfind('.')
 
@@ -274,17 +282,17 @@ class Uploader(SqlInterface, B2Interface) :
 
 				transaction.commit()
 
-			delete_file(file_on_disk)
+			self.delete_file(file_on_disk)
 
 			return {
 				'post_id': post_id,
 				'url': url,
-				'emoji': emoji,
+				# 'emoji': emoji,
 				'thumbnails': thumbnails,
 			}
 
 		except :
-			delete_file(file_on_disk)
+			self.delete_file(file_on_disk)
 			raise
 
 
