@@ -228,7 +228,13 @@ class Uploader(SqlInterface, B2Interface) :
 				if not data :
 					raise Forbidden('the post you are trying to upload to does not belong to this account.')
 
+				fullsize_image: bytes
+
 				with Image(file=open(file_on_disk, 'rb')) as image :
+					if web_resize :
+						image: Image = self.convert_image(image, self.web_size)
+						fullsize_image = self.get_image_data(image, compress = False)
+
 					# optimize
 					transaction.query("""
 						UPDATE kheina.public.posts
@@ -245,14 +251,9 @@ class Uploader(SqlInterface, B2Interface) :
 
 				post_id: str = data[0]
 				url: str = f'{post_id}/{filename}'
-				fullsize_image: bytes
 
-				if web_resize :
-					with Image(file=open(file_on_disk, 'rb')) as image :
-						image: Image = self.convert_image(image, self.web_size)
-						fullsize_image = self.get_image_data(image, compress = False)
-
-				else :
+				if not web_resize :
+					# this would have been populated earlier, if resized
 					fullsize_image = open(file_on_disk, 'rb').read()
 
 				# upload fullsize
