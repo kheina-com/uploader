@@ -27,7 +27,7 @@ Users = Gateway(users_host + '/v1/fetch_self', User)
 
 class Uploader(SqlInterface, B2Interface) :
 
-	def __init__(self) -> None :
+	def __init__(self: 'Uploader') -> None :
 		SqlInterface.__init__(self)
 		B2Interface.__init__(self, max_retries=5)
 		self.thumbnail_sizes: List[int] = [
@@ -38,6 +38,7 @@ class Uploader(SqlInterface, B2Interface) :
 			800,
 			1200,
 		]
+		self.web_size: int = 1500
 		self.emoji_size: int = 256
 		self.icon_size: int = 400
 		self.banner_size: int = 600
@@ -45,23 +46,23 @@ class Uploader(SqlInterface, B2Interface) :
 		self.filter_function: str = 'catrom'
 
 
-	def _validatePostId(self, post_id: str) :
+	def _validatePostId(self: 'Uploader', post_id: str) :
 		if len(post_id) != 8 :
 			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
 
 
-	def _validateTitle(self, title: str) :
+	def _validateTitle(self: 'Uploader', title: str) :
 		if title and len(title) > 100 :
 			raise BadRequest('the given title is invalid, title cannot be over 100 characters in length.', logdata={ 'title': title })
 
 
-	def _validateDescription(self, description: str) :
+	def _validateDescription(self: 'Uploader', description: str) :
 		if description and len(description) > 10000 :
 			raise BadRequest('the given description is invalid, description cannot be over 10,000 characters in length.', logdata={ 'description': description })
 
 
 	@HttpErrorHandler('creating new post')
-	def createPost(self, user_id: int) -> Dict[str, Union[str, int]] :
+	def createPost(self: 'Uploader', user_id: int) -> Dict[str, Union[str, int]] :
 		data: List[str] = self.query("""
 			SELECT kheina.public.create_new_post(%s);
 			""",
@@ -76,7 +77,7 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def createPostWithFields(self, user: KhUser, reply_to: str, title: str, description: str, privacy: Privacy, rating: Rating) :
+	def createPostWithFields(self: 'Uploader', user: KhUser, reply_to: str, title: str, description: str, privacy: Privacy, rating: Rating) :
 		columns = ['post_id', 'uploader']
 		values = ['%s', '%s']
 		params = [user.user_id]
@@ -132,7 +133,7 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def convert_image(self, image: Image, size: int) -> Image :
+	def convert_image(self: 'Uploader', image: Image, size: int) -> Image :
 		long_side = 0 if image.size[0] > image.size[1] else 1
 		ratio = size / image.size[long_side]
 
@@ -143,24 +144,38 @@ class Uploader(SqlInterface, B2Interface) :
 		return image
 
 
-	def get_image_data(self, image: Image) -> bytes :
-		image.compression_quality = self.output_quality
+	def get_image_data(self: 'Uploader', image: Image, compress: bool = True) -> bytes :
+		if compress :
+			image.compression_quality = self.output_quality
+
 		image_data = BytesIO()
 		image.save(file=image_data)
 		return image_data.getvalue()
 
 
-	async def uploadImage(self, user: KhUser, file_data: bytes, filename: str, post_id:Union[str, None]=None, emoji_name:str=None) -> Dict[str, Union[str, int, List[str]]] :
+	async def uploadImage(
+		self: 'Uploader',
+		user: KhUser,
+		file_data: bytes,
+		filename: str,
+		post_id: Union[str, None] = None,
+		emoji_name: str = None,
+		web_resize: bool = None,
+	) -> Dict[str, Union[str, int, List[str]]] :
 		if post_id :
 			self._validatePostId(post_id)
 
-		file_on_disk = f'images/{uuid4().hex}_{filename}'.encode()
-		content_type = None
+		# validate it's an actual photo
+		with Image(blob=file_data) as image :
+			pass
+
+		file_on_disk: bytes = f'images/{uuid4().hex}_{filename}'.encode()
 
 		with open(file_on_disk, 'wb') as file :
 			file.write(file_data)
 
 		del file_data
+		content_type: str
 
 		try :
 			with ExifTool() as et :
@@ -196,6 +211,9 @@ class Uploader(SqlInterface, B2Interface) :
 					fetch_one=True,
 				)
 
+				if not data :
+					raise Forbidden('the post you are trying to upload to does not belong to this account.')
+
 				with Image(file=open(file_on_disk, 'rb')) as image :
 					# optimize
 					transaction.query("""
@@ -207,20 +225,31 @@ class Uploader(SqlInterface, B2Interface) :
 						(*image.size, post_id),
 					)
 
-				if not data :
-					raise Forbidden('the post you are trying to upload to does not belong to this account.')
-
 				if post_id and old_filename and old_filename[0] :
 					if not await self.b2_delete_file_async(post_id, old_filename[0]) :
 						self.logger.error(f'failed to delete old image: {post_id}/{old_filename[0]}')
 
-				post_id = data[0]
+				post_id: str = data[0]
+				url: str = f'{post_id}/{filename}'
+				fullsize_image: bytes
 
-				url = f'{post_id}/{filename}'
+				if web_resize :
+					with Image(file=open(file_on_disk, 'rb')) as image :
+						resized: Image = self.convert_image(image, self.web_size)
+						fullsize_image = self.get_image_data(resized, compress = False)
+					
+					dot_index: int = url.rfind('.')
+
+					if dot_index and url[dot_index + 1:] in self.mime_types :
+						url = url[:dot_index] + '-web' + url[dot_index:]
+
+				else :
+					fullsize_image = open(file_on_disk, 'rb').read()
 
 				# upload fullsize
-				self.b2_upload(open(file_on_disk, 'rb').read(), url, content_type=content_type)
+				self.b2_upload(fullsize_image, url, content_type=content_type)
 
+				del fullsize_image
 
 				# upload thumbnails
 				thumbnails = { }
@@ -241,9 +270,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 					thumbnails[size] = url
 
-				# emoji
-				emoji: str = None
-				# (later)
+				# TODO: implement emojis
 
 				transaction.commit()
 
@@ -262,7 +289,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	@HttpErrorHandler('updating post metadata')
-	def updatePostMetadata(self, user: KhUser, post_id: str, title:str=None, description:str=None, privacy:Privacy=None, rating:Rating=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
+	def updatePostMetadata(self: 'Uploader', user: KhUser, post_id: str, title:str=None, description:str=None, privacy:Privacy=None, rating:Rating=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
 		self._validatePostId(post_id)
 		self._validateTitle(title)
 		self._validateDescription(description)
@@ -310,7 +337,7 @@ class Uploader(SqlInterface, B2Interface) :
 		return True
 
 
-	def _update_privacy(self, user_id: int, post_id: str, privacy: Privacy, transaction: Transaction = None, commit: bool = True) :
+	def _update_privacy(self: 'Uploader', user_id: int, post_id: str, privacy: Privacy, transaction: Transaction = None, commit: bool = True) :
 		self._validatePostId(post_id)
 
 		with transaction or self.transaction() as t :
@@ -376,12 +403,12 @@ class Uploader(SqlInterface, B2Interface) :
 		return True
 	
 	@HttpErrorHandler('updating post privacy')
-	def updatePrivacy(self, user_id: int, post_id: str, privacy: Privacy) :
+	def updatePrivacy(self: 'Uploader', user_id: int, post_id: str, privacy: Privacy) :
 		self._update_privacy(user_id, post_id, privacy)
 
 
 	@HttpErrorHandler('setting user icon')
-	async def setIcon(self, user: KhUser, post_id: str, coordinates: Coordinates) :
+	async def setIcon(self: 'Uploader', user: KhUser, post_id: str, coordinates: Coordinates) :
 		if coordinates.width != coordinates.height :
 			raise BadRequest(f'icons must be square. width({coordinates.width}) != height({coordinates.height})')
 
@@ -439,7 +466,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	@HttpErrorHandler('setting user banner')
-	async def setBanner(self, user: KhUser, post_id: str, coordinates: Coordinates) :
+	async def setBanner(self: 'Uploader', user: KhUser, post_id: str, coordinates: Coordinates) :
 		if round(coordinates.width / 3) != coordinates.height :
 			raise BadRequest(f'banners must be a 3x:1 rectangle. round(width / 3)({round(coordinates.width / 3)}) != height({coordinates.height})')
 

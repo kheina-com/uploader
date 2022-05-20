@@ -35,11 +35,12 @@ def v1CreatePost(req: Request, body: CreateRequest) :
 
 
 @app.post('/v1/upload_image')
-async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Optional[str] = Form(None)) :
+async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Optional[str] = Form(None), web_resize: Optional[bool] = Form(None)) :
 	"""
 	FORMDATA: {
 		"post_id": Optional[str],
 		"file": image file,
+		"web_resize": Optional[bool],
 	}
 	"""
 
@@ -63,6 +64,7 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Op
 		file.file.read(),
 		file.filename,
 		post_id=post_id,
+		web_resize=web_resize,
 	)
 
 
