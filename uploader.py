@@ -197,6 +197,12 @@ class Uploader(SqlInterface, B2Interface) :
 		if content_type != self._get_mime_from_filename(filename) :
 			raise BadRequest('file extension does not match file type.')
 
+		if web_resize :
+			dot_index: int = filename.rfind('.')
+
+			if dot_index and filename[dot_index + 1:] in self.mime_types :
+				filename = filename[:dot_index] + '-web' + filename[dot_index:]
+
 		try :
 			with self.transaction() as transaction :
 				old_filename: List[str] = transaction.query("""
@@ -245,11 +251,6 @@ class Uploader(SqlInterface, B2Interface) :
 					with Image(file=open(file_on_disk, 'rb')) as image :
 						image: Image = self.convert_image(image, self.web_size)
 						fullsize_image = self.get_image_data(image, compress = False)
-					
-					dot_index: int = url.rfind('.')
-
-					if dot_index and url[dot_index + 1:] in self.mime_types :
-						url = url[:dot_index] + '-web' + url[dot_index:]
 
 				else :
 					fullsize_image = open(file_on_disk, 'rb').read()
@@ -263,20 +264,20 @@ class Uploader(SqlInterface, B2Interface) :
 				thumbnails = { }
 
 				for size in self.thumbnail_sizes :
-					url: str = f'{post_id}/thumbnails/{size}.webp'
+					thumbnail_url: str = f'{post_id}/thumbnails/{size}.webp'
 					with Image(file=open(file_on_disk, 'rb')) as image :
 						image = self.convert_image(image, size)
-						self.b2_upload(self.get_image_data(image), url, self.mime_types['webp'])
+						self.b2_upload(self.get_image_data(image), thumbnail_url, self.mime_types['webp'])
 
-					thumbnails[size] = url
+					thumbnails[size] = thumbnail_url
 
 				# jpeg thumbnail
 				with Image(file=open(file_on_disk, 'rb')) as image :
-					url: str = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg'
+					thumbnail_url: str = f'{post_id}/thumbnails/{self.thumbnail_sizes[-1]}.jpg'
 					image = self.convert_image(image, self.thumbnail_sizes[-1]).convert('jpeg')
-					self.b2_upload(self.get_image_data(image), url, self.mime_types['jpeg'])
+					self.b2_upload(self.get_image_data(image), thumbnail_url, self.mime_types['jpeg'])
 
-					thumbnails[size] = url
+					thumbnails['jpeg'] = thumbnail_url
 
 				# TODO: implement emojis
 
