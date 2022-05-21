@@ -191,7 +191,6 @@ class Uploader(SqlInterface, B2Interface) :
 				et.execute(b'-overwrite_original_in_place', b'-ALL=', file_on_disk)
 
 		except :
-			self.delete_file(file_on_disk)
 			raise InternalServerError('Failed to strip file metadata.')
 
 		if content_type != self._get_mime_from_filename(filename) :
@@ -281,21 +280,20 @@ class Uploader(SqlInterface, B2Interface) :
 					thumbnails['jpeg'] = thumbnail_url
 
 				# TODO: implement emojis
+				emoji: str = None
 
 				transaction.commit()
 
-			self.delete_file(file_on_disk)
 
 			return {
 				'post_id': post_id,
 				'url': url,
-				# 'emoji': emoji,
+				'emoji': emoji,
 				'thumbnails': thumbnails,
 			}
 
-		except :
+		finally :
 			self.delete_file(file_on_disk)
-			raise
 
 
 	@HttpErrorHandler('updating post metadata')
