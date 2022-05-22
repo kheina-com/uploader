@@ -191,9 +191,11 @@ class Uploader(SqlInterface, B2Interface) :
 				et.execute(b'-overwrite_original_in_place', b'-ALL=', file_on_disk)
 
 		except :
+			self.delete_file(file_on_disk)
 			raise InternalServerError('Failed to strip file metadata.')
 
 		if content_type != self._get_mime_from_filename(filename) :
+			self.delete_file(file_on_disk)
 			raise BadRequest('file extension does not match file type.')
 
 		if web_resize :
