@@ -1,4 +1,4 @@
-kh-common[auth,logging,scoring,sql]>=0.4.9
+kh-common[auth,logging,scoring,sql]==0.4.10
 aiofiles>=0.5.0
 psycopg2-binary>=2.8.5
 ujson>=3.0.0
