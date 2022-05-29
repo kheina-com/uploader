@@ -247,7 +247,7 @@ class Uploader(SqlInterface, B2Interface) :
 					)
 
 				if post_id and old_filename and old_filename[0] :
-					if not await self.b2_delete_file_async(post_id, old_filename[0]) :
+					if not await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}') :
 						self.logger.error(f'failed to delete old image: {post_id}/{old_filename[0]}')
 
 				post_id: str = data[0]
@@ -471,8 +471,8 @@ class Uploader(SqlInterface, B2Interface) :
 
 		# cleanup old icons
 		if post_id != data[0] :
-			await self.b2_delete_file_async(data[0], f'icons/{handle}.webp')
-			await self.b2_delete_file_async(data[0], f'icons/{handle}.jpg')
+			await self.b2_delete_file_async(f'{data[0]}/icons/{handle}.webp')
+			await self.b2_delete_file_async(f'{data[0]}/icons/{handle}.jpg')
 
 
 	@HttpErrorHandler('setting user banner')
@@ -530,5 +530,5 @@ class Uploader(SqlInterface, B2Interface) :
 
 		# cleanup old banners
 		if post_id != data[0] :
-			await self.b2_delete_file_async(data[0], f'banners/{handle}.webp')
-			await self.b2_delete_file_async(data[0], f'banners/{handle}.jpg')
+			await self.b2_delete_file_async(f'{data[0]}/banners/{handle}.webp')
+			await self.b2_delete_file_async(f'{data[0]}/banners/{handle}.jpg')
