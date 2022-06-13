@@ -313,15 +313,15 @@ class Uploader(SqlInterface, B2Interface) :
 
 		params = []
 
-		if title :
+		if title is not None :
 			query += """,
 			title = %s"""
-			params.append(title)
+			params.append(title or None)
 
-		if description :
+		if description is not None :
 			query += """,
 			description = %s"""
-			params.append(description)
+			params.append(description or None)
 
 		if rating :
 			query += """,
