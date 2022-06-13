@@ -15,9 +15,9 @@ from secrets import token_bytes
 from urllib.parse import quote
 from exiftool import ExifTool
 from wand.image import Image
+from uuid import UUID, uuid4
 from io import BytesIO
 from math import floor
-from uuid import uuid4
 from time import time
 from os import remove
 
@@ -192,7 +192,9 @@ class Uploader(SqlInterface, B2Interface) :
 
 		except :
 			self.delete_file(file_on_disk)
-			raise InternalServerError('Failed to strip file metadata.')
+			refid: UUID = uuid4()
+			self.logger.exception({ 'refid': refid })
+			raise InternalServerError('Failed to strip file metadata.', refid=refid)
 
 		if content_type != self._get_mime_from_filename(filename) :
 			self.delete_file(file_on_disk)
