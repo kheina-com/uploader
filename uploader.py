@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
+import aerospike
 from aiohttp import ClientResponseError, request
 from exiftool import ExifTool
 from kh_common.auth import KhUser
@@ -28,14 +29,13 @@ from kh_common.scoring import hot as calc_hot
 from kh_common.sql import SqlInterface, Transaction
 from wand.image import Image
 
-from models import Coordinates, Post
-import aerospike
+from models import Coordinates, Post, PostSize
 
 
 Posts: Gateway = Gateway(posts_host + '/v1/post/{post_id}', Post)
 Users: Gateway = Gateway(users_host + '/v1/fetch_self', User)
 KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
-PostType: type = Dict[str, Union[str, int, datetime, Privacy, Rating, Dict[str, Union[str, int, None]], None]]
+PostType: type = Dict[str, Union[str, PostSize, int, datetime, Privacy, Rating, Dict[str, Union[str, int, None]], None]]
 EmptyPost: PostType = {
 	"size": None,
 	"filename": None,

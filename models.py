@@ -8,6 +8,11 @@ from kh_common.models.user import UserPortable
 from pydantic import BaseModel
 
 
+class PostSize(BaseModel) :
+	width: int
+	height: int
+
+
 class UpdateRequest(BaseModel) :
 	post_id: str
 	title: Optional[str]
