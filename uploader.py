@@ -147,7 +147,7 @@ class Uploader(SqlInterface, B2Interface) :
 				if not data[0] :
 					break
 
-			return_cols: List[str] = columns + ['created', 'updated']
+			return_cols: List[str] = columns + ['created_on', 'updated_on']
 
 			data = transaction.query(f"""
 				INSERT INTO kheina.public.posts
@@ -166,7 +166,10 @@ class Uploader(SqlInterface, B2Interface) :
 			transaction.commit()
 
 		# store this post in cache
-		KVS.put(post_id, { **EmptyPost, **dict(zip(return_cols, data)) })
+		KVS.put(post_id, {
+			**EmptyPost,
+			**dict(zip(columns + ['created', 'updated'], data)),
+		})
 
 		return {
 			'post_id': post_id,
@@ -276,7 +279,7 @@ class Uploader(SqlInterface, B2Interface) :
 							SET width = %s,
 								height = %s
 						WHERE posts.post_id = %s
-						RETURNING posts.updated;
+						RETURNING posts.updated_on;
 						""",
 						(*image.size, post_id),
 						fetch_one=True,
@@ -368,29 +371,32 @@ class Uploader(SqlInterface, B2Interface) :
 		if title is not None :
 			query += """,
 			title = %s"""
+			columns.append('title')
 			params.append(title or None)
 
 		if description is not None :
 			query += """,
 			description = %s"""
+			columns.append('description')
 			params.append(description or None)
 
 		if rating :
 			query += """,
 			rating = rating_to_id(%s)"""
+			columns.append('rating')
 			params.append(rating.name)
 
 		if not params :
 			raise BadRequest('no params were provided.')
 
 		with self.transaction() as t :
-			return_cols: List[str] = columns + ['created', 'updated']
+			return_cols: List[str] = columns + ['created_on', 'updated_on']
 
-			updated = t.query(
-				query + """
+			data = t.query(
+				query + f"""
 				WHERE uploader = %s
 					AND post_id = %s
-				RETURNING posts.updated;
+				RETURNING {','.join(return_cols)};
 				""",
 				params + [user.user_id, post_id],
 				fetch_one=True,
@@ -407,8 +413,8 @@ class Uploader(SqlInterface, B2Interface) :
 			# post is populated in cache, so we can safely update it
 			KVS.put(post_id, {
 				**post,
-				'updated': updated,
-				# 'privacy': privacy,
+				'privacy': privacy,
+				**dict(zip(columns + ['created', 'updated'], data)),
 			})
 
 		return True
