@@ -6,7 +6,7 @@ from math import floor
 from os import remove
 from secrets import token_bytes
 from time import time
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -77,6 +77,13 @@ class Uploader(SqlInterface, B2Interface) :
 		self.banner_size: int = 600
 		self.output_quality: int = 85
 		self.filter_function: str = 'catrom'
+
+
+	def _convert_item(self: 'SqlInterface', item: Any) -> Any :
+		for cls in type(item).__mro__ :
+			if cls in self._conversions_ :
+				return self._conversions[cls](item)
+		return item
 
 
 	def delete_file(self: 'Uploader', path: str) :
