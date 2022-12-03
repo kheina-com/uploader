@@ -8,6 +8,7 @@ from time import time
 from typing import Dict, List, Optional, Union
 from urllib.parse import quote
 from uuid import UUID, uuid4
+from enum import Enum
 
 from aiohttp import ClientResponseError, request
 from exiftool import ExifTool
@@ -53,7 +54,12 @@ EmptyPost: PostType = {
 class Uploader(SqlInterface, B2Interface) :
 
 	def __init__(self: 'Uploader') -> None :
-		SqlInterface.__init__(self)
+		SqlInterface.__init__(
+			self,
+			conversions={
+				Enum: lambda x: x.name,
+			},
+		)
 		B2Interface.__init__(self, max_retries=5)
 		self.thumbnail_sizes: List[int] = [
 			# the length of the longest side, in pixels
@@ -136,7 +142,7 @@ class Uploader(SqlInterface, B2Interface) :
 		if rating :
 			columns.append('rating')
 			values.append('rating_to_id(%s)')
-			params.append(rating.name)
+			params.append(rating)
 
 		post_id = None
 
@@ -384,7 +390,7 @@ class Uploader(SqlInterface, B2Interface) :
 			query += """,
 			rating = rating_to_id(%s)"""
 			columns.append('rating')
-			params.append(rating.name)
+			params.append(rating)
 
 		if not params :
 			raise BadRequest('no params were provided.')
