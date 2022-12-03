@@ -1,27 +1,31 @@
-from datetime import datetime
-from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
-from kh_common.scoring import confidence, controversial as calc_cont, hot as calc_hot
-from kh_common.config.constants import posts_host, users_host
-from kh_common.caching.key_value_store import KeyValueStore
-from models import Coordinates, Post, Privacy, Rating
-from kh_common.sql import SqlInterface, Transaction
-from aiohttp import ClientResponseError, request
-from kh_common.backblaze import B2Interface
-from kh_common.models.user import User
-from kh_common.base64 import b64encode
-from kh_common.gateway import Gateway
-from typing import Dict, List, Optional, Union
-from kh_common.auth import KhUser
 from asyncio import ensure_future
-from secrets import token_bytes
-from urllib.parse import quote
-from exiftool import ExifTool
-from wand.image import Image
-from uuid import UUID, uuid4
+from datetime import datetime
 from io import BytesIO
 from math import floor
-from time import time
 from os import remove
+from secrets import token_bytes
+from time import time
+from typing import Dict, List, Optional, Union
+from urllib.parse import quote
+from uuid import UUID, uuid4
+
+from aiohttp import ClientResponseError, request
+from exiftool import ExifTool
+from kh_common.auth import KhUser
+from kh_common.backblaze import B2Interface
+from kh_common.base64 import b64encode
+from kh_common.caching.key_value_store import KeyValueStore
+from kh_common.config.constants import posts_host, users_host
+from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
+from kh_common.gateway import Gateway
+from kh_common.models.user import User
+from kh_common.scoring import confidence
+from kh_common.scoring import controversial as calc_cont
+from kh_common.scoring import hot as calc_hot
+from kh_common.sql import SqlInterface, Transaction
+from wand.image import Image
+
+from models import Coordinates, Post, Privacy, Rating
 
 
 Posts: Gateway = Gateway(posts_host + '/v1/post/{post_id}', Post)
@@ -44,6 +48,7 @@ EmptyPost: PostType = {
 	"rating": None,
 	"privacy": None,
 }
+
 
 class Uploader(SqlInterface, B2Interface) :
 
@@ -473,11 +478,13 @@ class Uploader(SqlInterface, B2Interface) :
 				t.commit()
 
 		return True
-	
+
 	@HttpErrorHandler('updating post privacy')
 	def updatePrivacy(self: 'Uploader', user_id: int, post_id: str, privacy: Privacy) :
 		self._update_privacy(user_id, post_id, privacy)
 
+		if KVS.exists(post_id) :
+			KVS.remove(post_id)
 
 	@HttpErrorHandler('setting user icon')
 	async def setIcon(self: 'Uploader', user: KhUser, post_id: str, coordinates: Coordinates) :
