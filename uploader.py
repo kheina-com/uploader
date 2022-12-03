@@ -126,9 +126,9 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	def createPostWithFields(self: 'Uploader', user: KhUser, reply_to: str, title: str, description: str, privacy: Privacy, rating: Rating) :
-		columns = ['post_id', 'uploader']
-		values = ['%s', '%s']
-		params = [user.user_id]
+		columns: List[str] = ['post_id', 'uploader']
+		values: List[str] = ['%s', '%s']
+		params: List[Any] = [user.user_id]
 
 		if reply_to :
 			self._validatePostId(reply_to)
@@ -183,7 +183,7 @@ class Uploader(SqlInterface, B2Interface) :
 		# store this post in cache
 		KVS.put(post_id, {
 			**EmptyPost,
-			**dict(zip(columns + ['created', 'updated'], [post_id] + params + data)),
+			**dict(zip(columns + ['created', 'updated'], [post_id] + params + list(data))),
 		})
 
 		return {
@@ -381,7 +381,7 @@ class Uploader(SqlInterface, B2Interface) :
 			"""
 
 		columns: List[str] = []
-		params = []
+		params: List[Any] = []
 
 		if title is not None :
 			query += """,
@@ -429,7 +429,7 @@ class Uploader(SqlInterface, B2Interface) :
 			KVS.put(post_id, {
 				**post,
 				'privacy': privacy,
-				**dict(zip(columns + ['created', 'updated'], params + data)),
+				**dict(zip(columns + ['created', 'updated'], params + list(data))),
 			})
 
 		return True
