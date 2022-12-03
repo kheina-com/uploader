@@ -1,6 +1,8 @@
+from datetime import datetime
 from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
 from kh_common.scoring import confidence, controversial as calc_cont, hot as calc_hot
 from kh_common.config.constants import posts_host, users_host
+from kh_common.caching.key_value_store import KeyValueStore
 from models import Coordinates, Post, Privacy, Rating
 from kh_common.sql import SqlInterface, Transaction
 from aiohttp import ClientResponseError, request
@@ -8,7 +10,7 @@ from kh_common.backblaze import B2Interface
 from kh_common.models.user import User
 from kh_common.base64 import b64encode
 from kh_common.gateway import Gateway
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 from kh_common.auth import KhUser
 from asyncio import ensure_future
 from secrets import token_bytes
@@ -21,9 +23,27 @@ from math import floor
 from time import time
 from os import remove
 
-Posts = Gateway(posts_host + '/v1/post/{post_id}', Post)
-Users = Gateway(users_host + '/v1/fetch_self', User)		
 
+Posts: Gateway = Gateway(posts_host + '/v1/post/{post_id}', Post)
+Users: Gateway = Gateway(users_host + '/v1/fetch_self', User)
+KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
+PostType: type = Dict[str, Union[str, int, datetime, Privacy, Rating, Dict[str, Union[str, int, None]], None]]
+EmptyPost: PostType = {
+	"size": None,
+	"filename": None,
+	"created": None,
+	"parent": None,
+	"user": None,
+	"user_id": None,
+	"score": None,
+	"media_type": None,
+	"title": None,
+	"post_id": None,
+	"updated": None,
+	"description": None,
+	"rating": None,
+	"privacy": None,
+}
 
 class Uploader(SqlInterface, B2Interface) :
 
@@ -122,19 +142,26 @@ class Uploader(SqlInterface, B2Interface) :
 				if not data[0] :
 					break
 
-			transaction.query(f"""
+			return_cols: List[str] = columns + ['created', 'updated']
+
+			data = transaction.query(f"""
 				INSERT INTO kheina.public.posts
 				({','.join(columns)})
 				VALUES
 				({','.join(values)})
+				RETURNING {','.join(return_cols)};
 				""",
 				[post_id] + params,
+				fetch_one=True,
 			)
 
 			if privacy :
 				self._update_privacy(user.user_id, post_id, privacy, transaction=transaction, commit=False)
 
 			transaction.commit()
+
+		# store this post in cache
+		KVS.put(post_id, { **EmptyPost, **dict(zip(return_cols, data)) })
 
 		return {
 			'post_id': post_id,
@@ -196,7 +223,7 @@ class Uploader(SqlInterface, B2Interface) :
 			self.logger.exception({ 'refid': refid })
 			raise InternalServerError('Failed to strip file metadata.', refid=refid)
 
-		if content_type != self._get_mime_from_filename(filename) :
+		if content_type != self._get_mime_from_filename(filename.lower()) :
 			self.delete_file(file_on_disk)
 			raise BadRequest('file extension does not match file type.')
 
@@ -239,14 +266,20 @@ class Uploader(SqlInterface, B2Interface) :
 						fullsize_image = self.get_image_data(image, compress = False)
 
 					# optimize
-					transaction.query("""
+					updated = transaction.query("""
 						UPDATE kheina.public.posts
 							SET width = %s,
 								height = %s
 						WHERE posts.post_id = %s
+						RETURNING posts.updated;
 						""",
 						(*image.size, post_id),
+						fetch_one=True,
 					)
+					image_size: Dict[str, int] = {
+						'width': image.size[0],
+						'height': image.size[1],
+					}
 
 				if post_id and old_filename and old_filename[0] :
 					if not await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}') :
@@ -288,6 +321,19 @@ class Uploader(SqlInterface, B2Interface) :
 
 				transaction.commit()
 
+			post: Optional[PostType] = KVS.get(post_id)
+			if post :
+				# post is populated in cache, so we can safely update it
+				KVS.put(post_id, {
+					**post,
+					'updated': updated,
+					'media_type': {
+						'file_type': content_type[content_type.find('/')+1:],
+						'mime_type': content_type,
+					},
+					'size': image_size,
+					'filename': filename,
+				})
 
 			return {
 				'post_id': post_id,
@@ -311,6 +357,7 @@ class Uploader(SqlInterface, B2Interface) :
 			SET updated_on = NOW()
 			"""
 
+		columns: List[str] = []
 		params = []
 
 		if title is not None :
@@ -332,12 +379,16 @@ class Uploader(SqlInterface, B2Interface) :
 			raise BadRequest('no params were provided.')
 
 		with self.transaction() as t :
-			t.query(
+			return_cols: List[str] = columns + ['created', 'updated']
+
+			updated = t.query(
 				query + """
 				WHERE uploader = %s
-					AND post_id = %s;
+					AND post_id = %s
+				RETURNING posts.updated;
 				""",
 				params + [user.user_id, post_id],
+				fetch_one=True,
 			)
 
 			if privacy :
@@ -345,6 +396,15 @@ class Uploader(SqlInterface, B2Interface) :
 
 			else :
 				t.commit()
+
+		post: Optional[PostType] = KVS.get(post_id)
+		if post :
+			# post is populated in cache, so we can safely update it
+			KVS.put(post_id, {
+				**post,
+				'updated': updated,
+				# 'privacy': privacy,
+			})
 
 		return True
 
