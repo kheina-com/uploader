@@ -405,7 +405,7 @@ class Uploader(SqlInterface, B2Interface) :
 			raise BadRequest('no params were provided.')
 
 		with self.transaction() as t :
-			return_cols: List[str] = columns + ['created_on', 'updated_on']
+			return_cols: List[str] = ['created_on', 'updated_on']
 
 			data = t.query(
 				query + f"""
@@ -429,7 +429,7 @@ class Uploader(SqlInterface, B2Interface) :
 			KVS.put(post_id, {
 				**post,
 				'privacy': privacy,
-				**dict(zip(columns + ['created', 'updated'], data)),
+				**dict(zip(columns + ['created', 'updated'], params + data)),
 			})
 
 		return True
