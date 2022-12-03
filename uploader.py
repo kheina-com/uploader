@@ -162,7 +162,7 @@ class Uploader(SqlInterface, B2Interface) :
 				if not data[0] :
 					break
 
-			return_cols: List[str] = columns + ['created_on', 'updated_on']
+			return_cols: List[str] = ['created_on', 'updated_on']
 
 			data = transaction.query(f"""
 				INSERT INTO kheina.public.posts
@@ -183,7 +183,7 @@ class Uploader(SqlInterface, B2Interface) :
 		# store this post in cache
 		KVS.put(post_id, {
 			**EmptyPost,
-			**dict(zip(columns + ['created', 'updated'], data)),
+			**dict(zip(columns + ['created', 'updated'], [post_id] + params + data)),
 		})
 
 		return {
