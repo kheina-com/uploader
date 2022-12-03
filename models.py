@@ -2,23 +2,10 @@ from datetime import datetime
 from enum import Enum, unique
 from typing import Optional
 
+from kh_common.models.privacy import Privacy
 from kh_common.models.rating import Rating
 from kh_common.models.user import UserPortable
 from pydantic import BaseModel
-
-
-@unique
-class Privacy(Enum) :
-	public: str = 'public'
-	unlisted: str = 'unlisted'
-	private: str = 'private'
-
-
-@unique
-class Rating(Enum) :
-	general: str = 'general'
-	mature: str = 'mature'
-	explicit: str = 'explicit'
 
 
 class UpdateRequest(BaseModel) :

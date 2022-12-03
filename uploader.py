@@ -1,5 +1,6 @@
 from asyncio import ensure_future
 from datetime import datetime
+from enum import Enum
 from io import BytesIO
 from math import floor
 from os import remove
@@ -8,7 +9,6 @@ from time import time
 from typing import Dict, List, Optional, Union
 from urllib.parse import quote
 from uuid import UUID, uuid4
-from enum import Enum
 
 from aiohttp import ClientResponseError, request
 from exiftool import ExifTool
@@ -19,6 +19,8 @@ from kh_common.caching.key_value_store import KeyValueStore
 from kh_common.config.constants import posts_host, users_host
 from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
 from kh_common.gateway import Gateway
+from kh_common.models.privacy import Privacy
+from kh_common.models.rating import Rating
 from kh_common.models.user import User
 from kh_common.scoring import confidence
 from kh_common.scoring import controversial as calc_cont
@@ -26,7 +28,7 @@ from kh_common.scoring import hot as calc_hot
 from kh_common.sql import SqlInterface, Transaction
 from wand.image import Image
 
-from models import Coordinates, Post, Privacy, Rating
+from models import Coordinates, Post
 
 
 Posts: Gateway = Gateway(posts_host + '/v1/post/{post_id}', Post)
