@@ -71,7 +71,7 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Op
 
 
 @app.post('/v1/update_post')
-def v1UpdatePost(req: Request, body: UpdateRequest) :
+async def v1UpdatePost(req: Request, body: UpdateRequest) :
 	"""
 	{
 		"post_id": str,
@@ -80,7 +80,7 @@ def v1UpdatePost(req: Request, body: UpdateRequest) :
 	}
 	"""
 
-	if uploader.updatePostMetadata(
+	if await uploader.updatePostMetadata(
 		req.user,
 		body.post_id,
 		body.title,

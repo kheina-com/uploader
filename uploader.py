@@ -29,6 +29,7 @@ from kh_common.sql import SqlInterface, Transaction
 from wand.image import Image
 
 from models import Coordinates, Post
+import aerospike
 
 
 Posts: Gateway = Gateway(posts_host + '/v1/post/{post_id}', Post)
@@ -84,6 +85,14 @@ class Uploader(SqlInterface, B2Interface) :
 			if cls in self._conversions :
 				return self._conversions[cls](item)
 		return item
+
+
+	async def kvs_get(post_id: str) -> Optional[PostType] :
+		try :
+			return await KVS.get_async(post_id)
+
+		except aerospike.exceptions.RecordNotFound :
+			return None
 
 
 	def delete_file(self: 'Uploader', path: str) :
@@ -344,7 +353,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 				transaction.commit()
 
-			post: Optional[PostType] = KVS.get(post_id)
+			post: Optional[PostType] = await self.kvs_get(post_id)
 			if post :
 				# post is populated in cache, so we can safely update it
 				KVS.put(post_id, {
@@ -370,7 +379,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	@HttpErrorHandler('updating post metadata')
-	def updatePostMetadata(self: 'Uploader', user: KhUser, post_id: str, title:str=None, description:str=None, privacy:Privacy=None, rating:Rating=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
+	async def updatePostMetadata(self: 'Uploader', user: KhUser, post_id: str, title:str=None, description:str=None, privacy:Privacy=None, rating:Rating=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
 		self._validatePostId(post_id)
 		self._validateTitle(title)
 		self._validateDescription(description)
@@ -423,12 +432,15 @@ class Uploader(SqlInterface, B2Interface) :
 			else :
 				t.commit()
 
-		post: Optional[PostType] = KVS.get(post_id)
+		post: Optional[PostType] = await self.kvs_get(post_id)
 		if post :
 			# post is populated in cache, so we can safely update it
+
+			if privacy :
+				post['privacy'] = privacy
+
 			KVS.put(post_id, {
 				**post,
-				'privacy': privacy,
 				**dict(zip(columns + ['created', 'updated'], params + list(data))),
 			})
 
