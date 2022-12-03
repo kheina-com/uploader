@@ -45,8 +45,8 @@ EmptyPost: PostType = {
 	"post_id": None,
 	"updated": None,
 	"description": None,
-	"rating": None,
-	"privacy": None,
+	"rating": Rating.explicit,
+	"privacy": Privacy.unpublished,
 }
 
 
