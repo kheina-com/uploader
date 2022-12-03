@@ -87,7 +87,7 @@ class Uploader(SqlInterface, B2Interface) :
 		return item
 
 
-	async def kvs_get(post_id: str) -> Optional[PostType] :
+	async def kvs_get(self: 'Uploader', post_id: str) -> Optional[PostType] :
 		try :
 			return await KVS.get_async(post_id)
 
