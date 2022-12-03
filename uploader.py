@@ -81,7 +81,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 	def _convert_item(self: 'SqlInterface', item: Any) -> Any :
 		for cls in type(item).__mro__ :
-			if cls in self._conversions_ :
+			if cls in self._conversions :
 				return self._conversions[cls](item)
 		return item
 
