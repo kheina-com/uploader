@@ -60,6 +60,7 @@ class MediaType(BaseModel) :
 
 class Post(BaseModel) :
 	post_id: str
+	user_id: int
 	title: Optional[str]
 	description: Optional[str]
 	user: UserPortable
@@ -71,4 +72,3 @@ class Post(BaseModel) :
 	updated: Optional[datetime]
 	filename: Optional[str]
 	media_type: Optional[MediaType]
-	blocked: bool

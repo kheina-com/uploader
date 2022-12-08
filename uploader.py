@@ -29,29 +29,12 @@ from kh_common.scoring import hot as calc_hot
 from kh_common.sql import SqlInterface, Transaction
 from wand.image import Image
 
-from models import Coordinates, Post, PostSize
+from models import Coordinates, MediaType, Post, PostSize
 
 
 Posts: Gateway = Gateway(posts_host + '/v1/post/{post_id}', Post)
 Users: Gateway = Gateway(users_host + '/v1/fetch_self', User)
 KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
-PostType: type = Dict[str, Union[str, PostSize, int, datetime, Privacy, Rating, Dict[str, Union[str, int, None]], None]]
-EmptyPost: PostType = {
-	"size": None,
-	"filename": None,
-	"created": None,
-	"parent": None,
-	"user": None,
-	"user_id": None,
-	"score": None,
-	"media_type": None,
-	"title": None,
-	"post_id": None,
-	"updated": None,
-	"description": None,
-	"rating": Rating.explicit,
-	"privacy": Privacy.unpublished,
-}
 
 
 class Uploader(SqlInterface, B2Interface) :
@@ -87,9 +70,9 @@ class Uploader(SqlInterface, B2Interface) :
 		return item
 
 
-	async def kvs_get(self: 'Uploader', post_id: str) -> Optional[PostType] :
+	async def kvs_get(self: 'Uploader', post_id: str) -> Optional[Post] :
 		try :
-			return await KVS.get_async(post_id)
+			return Post.parse_obj(await KVS.get_async(post_id))
 
 		except aerospike.exceptions.RecordNotFound :
 			return None
@@ -189,11 +172,14 @@ class Uploader(SqlInterface, B2Interface) :
 
 			transaction.commit()
 
-		# store this post in cache
-		KVS.put(post_id, {
-			**EmptyPost,
+		post: Post = Post(
+			user_id=user.user_id,
+			privacy=privacy or Privacy.unpublished,
 			**dict(zip(columns + ['created', 'updated'], [post_id] + params + list(data))),
-		})
+		)
+
+		# store this post in cache
+		KVS.put(post_id, post.dict())
 
 		return {
 			'post_id': post_id,
@@ -308,10 +294,10 @@ class Uploader(SqlInterface, B2Interface) :
 						(*image.size, post_id),
 						fetch_one=True,
 					)
-					image_size: Dict[str, int] = {
-						'width': image.size[0],
-						'height': image.size[1],
-					}
+					image_size: PostSize = PostSize(
+						width=image.size[0],
+						height=image.size[1],
+					)
 
 				if post_id and old_filename and old_filename[0] :
 					if not await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}') :
@@ -353,19 +339,17 @@ class Uploader(SqlInterface, B2Interface) :
 
 				transaction.commit()
 
-			post: Optional[PostType] = await self.kvs_get(post_id)
+			post: Optional[Post] = await self.kvs_get(post_id)
 			if post :
 				# post is populated in cache, so we can safely update it
-				KVS.put(post_id, {
-					**post,
-					'updated': updated,
-					'media_type': {
-						'file_type': content_type[content_type.find('/')+1:],
-						'mime_type': content_type,
-					},
-					'size': image_size,
-					'filename': filename,
-				})
+				post.updated = updated
+				post.media_type = MediaType(
+					file_type=content_type[content_type.find('/')+1:],
+					mime_type=content_type,
+				)
+				post.size = image_size
+				post.filename = filename
+				KVS.put(post_id, post.dict())
 
 			return {
 				'post_id': post_id,
@@ -432,17 +416,19 @@ class Uploader(SqlInterface, B2Interface) :
 			else :
 				t.commit()
 
-		post: Optional[PostType] = await self.kvs_get(post_id)
+		post: Optional[Post] = await self.kvs_get(post_id)
 		if post :
 			# post is populated in cache, so we can safely update it
 
 			if privacy :
-				post['privacy'] = privacy
+				post.privacy = privacy
 
-			KVS.put(post_id, {
-				**post,
+			post = Post.parse_obj({
+				**post.dict(),
 				**dict(zip(columns + ['created', 'updated'], params + list(data))),
 			})
+
+			KVS.put(post_id, post.dict())
 
 		return True
 
@@ -512,12 +498,16 @@ class Uploader(SqlInterface, B2Interface) :
 
 		return True
 
+
 	@HttpErrorHandler('updating post privacy')
-	def updatePrivacy(self: 'Uploader', user_id: int, post_id: str, privacy: Privacy) :
+	async def updatePrivacy(self: 'Uploader', user_id: int, post_id: str, privacy: Privacy) :
 		self._update_privacy(user_id, post_id, privacy)
 
-		if KVS.exists(post_id) :
-			KVS.remove(post_id)
+		post: Optional[Post] = await self.kvs_get(post_id)
+		if post :
+			post.privacy = privacy
+			KVS.put(post_id, post.dict())
+
 
 	@HttpErrorHandler('setting user icon')
 	async def setIcon(self: 'Uploader', user: KhUser, post_id: str, coordinates: Coordinates) :
