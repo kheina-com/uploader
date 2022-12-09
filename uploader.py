@@ -17,7 +17,7 @@ from kh_common.auth import KhUser
 from kh_common.backblaze import B2Interface
 from kh_common.base64 import b64encode
 from kh_common.caching.key_value_store import KeyValueStore
-from kh_common.config.constants import posts_host, users_host
+from kh_common.config.constants import posts_host, tags_host, users_host
 from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
 from kh_common.gateway import Gateway
 from kh_common.models.privacy import Privacy
@@ -27,14 +27,17 @@ from kh_common.scoring import confidence
 from kh_common.scoring import controversial as calc_cont
 from kh_common.scoring import hot as calc_hot
 from kh_common.sql import SqlInterface, Transaction
+from kh_common.utilities import flatten
 from wand.image import Image
 
-from models import Coordinates, MediaType, Post, PostSize
+from models import Coordinates, MediaType, Post, PostSize, TagGroups
 
 
 Posts: Gateway = Gateway(posts_host + '/v1/post/{post_id}', Post)
 Users: Gateway = Gateway(users_host + '/v1/fetch_self', User)
+Tags = Gateway(tags_host + '/v1/fetch_tags/{post_id}', TagGroups)
 KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
+CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
 
 
 class Uploader(SqlInterface, B2Interface) :
@@ -68,6 +71,60 @@ class Uploader(SqlInterface, B2Interface) :
 			if cls in self._conversions :
 				return self._conversions[cls](item)
 		return item
+
+
+	def _populate_tag_cache(self, tag: str) -> None :
+		if not CountKVS.exists(tag) :
+			# we gotta populate it here (sad)
+			data = self.query("""
+				SELECT COUNT(1)
+				FROM kheina.public.tags
+					INNER JOIN kheina.public.tag_post
+						ON tags.tag_id = tag_post.tag_id
+					INNER JOIN kheina.public.posts
+						ON tag_post.post_id = posts.post_id
+							AND posts.privacy_id = privacy_to_id('public')
+				WHERE tags.tag = %s;
+				""",
+				(tag,),
+				fetch_one=True,
+			)
+			CountKVS.put(tag, int(data[0]), -1)
+
+
+	def _get_tag_count(self, tag: str) -> int :
+		self._populate_tag_cache(tag)
+		return CountKVS.get(tag)
+
+
+	def _increment_tag_count(self, tag: str) -> None :
+		self._populate_tag_cache(tag)
+		KeyValueStore._client.increment(
+			(CountKVS._namespace, CountKVS._set, tag),
+			'data',
+			1,
+			meta={
+				'ttl': -1,
+			},
+			policy={
+				'max_retries': 3,
+			},
+		)
+
+
+	def _decrement_tag_count(self, tag: str) -> None :
+		self._populate_tag_cache(tag)
+		KeyValueStore._client.increment(
+			(CountKVS._namespace, CountKVS._set, tag),
+			'data',
+			1,
+			meta={
+				'ttl': -1,
+			},
+			policy={
+				'max_retries': 3,
+			},
+		)
 
 
 	async def kvs_get(self: 'Uploader', post_id: str) -> Optional[Post] :
@@ -117,7 +174,7 @@ class Uploader(SqlInterface, B2Interface) :
 		}
 
 
-	def createPostWithFields(self: 'Uploader', user: KhUser, reply_to: str, title: str, description: str, privacy: Privacy, rating: Rating) :
+	async def createPostWithFields(self: 'Uploader', user: KhUser, reply_to: str, title: str, description: str, privacy: Privacy, rating: Rating) :
 		columns: List[str] = ['post_id', 'uploader']
 		values: List[str] = ['%s', '%s']
 		params: List[Any] = [user.user_id]
@@ -168,7 +225,7 @@ class Uploader(SqlInterface, B2Interface) :
 			)
 
 			if privacy :
-				self._update_privacy(user.user_id, post_id, privacy, transaction=transaction, commit=False)
+				await self._update_privacy(user, post_id, privacy, transaction=transaction, commit=False)
 
 			transaction.commit()
 
@@ -411,7 +468,7 @@ class Uploader(SqlInterface, B2Interface) :
 			)
 
 			if privacy :
-				self._update_privacy(user.user_id, post_id, privacy, transaction=t, commit=True)
+				await self._update_privacy(user, post_id, privacy, transaction=t, commit=True)
 
 			else :
 				t.commit()
@@ -433,7 +490,7 @@ class Uploader(SqlInterface, B2Interface) :
 		return True
 
 
-	def _update_privacy(self: 'Uploader', user_id: int, post_id: str, privacy: Privacy, transaction: Transaction = None, commit: bool = True) :
+	async def _update_privacy(self: 'Uploader', user: KhUser, post_id: str, privacy: Privacy, transaction: Transaction = None, commit: bool = True) :
 		self._validatePostId(post_id)
 
 		with transaction or self.transaction() as t :
@@ -445,12 +502,17 @@ class Uploader(SqlInterface, B2Interface) :
 				WHERE posts.uploader = %s
 					AND posts.post_id = %s;
 				""",
-				(user_id, post_id),
+				(user.user_id, post_id),
 				fetch_one=True,
 			)
 
 			if not data :
 				raise NotFound('the provided post does not exist or it does not belong to this account.')
+
+			if data[0] == privacy.name :
+				raise BadRequest("post privacy cannot be updated to the previous privacy level.")
+
+			tags = Tags(post_id=post_id, auth=user.token.token_string if user.token else None)
 
 			if data[0] == 'unpublished' :
 				query = """
@@ -474,9 +536,9 @@ class Uploader(SqlInterface, B2Interface) :
 						AND posts.post_id = %s;
 				"""
 				params = (
-					user_id, post_id, True,
+					user.user_id, post_id, True,
 					post_id, 1, 0, 1, calc_hot(1, 0, time()), confidence(1, 1), calc_cont(1, 0),
-					privacy.name, user_id, post_id,
+					privacy.name, user.user_id, post_id,
 				)
 
 			else :
@@ -488,7 +550,7 @@ class Uploader(SqlInterface, B2Interface) :
 						AND posts.post_id = %s;
 				"""
 				params = (
-					privacy.name, user_id, post_id,
+					privacy.name, user.user_id, post_id,
 				)
 
 			t.query(query, params)
@@ -496,12 +558,20 @@ class Uploader(SqlInterface, B2Interface) :
 			if commit :
 				t.commit()
 
+			if privacy == Privacy.public :
+				for tag in flatten(await tags) :
+					self._increment_tag_count(tag)
+
+			else :
+				for tag in flatten(await tags) :
+					self._decrement_tag_count(tag)
+
 		return True
 
 
 	@HttpErrorHandler('updating post privacy')
-	async def updatePrivacy(self: 'Uploader', user_id: int, post_id: str, privacy: Privacy) :
-		self._update_privacy(user_id, post_id, privacy)
+	async def updatePrivacy(self: 'Uploader', user: KhUser, post_id: str, privacy: Privacy) :
+		await self._update_privacy(user, post_id, privacy)
 
 		post: Optional[Post] = await self.kvs_get(post_id)
 		if post :

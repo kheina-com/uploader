@@ -18,13 +18,13 @@ async def shutdown() :
 
 
 @app.post('/v1/create_post')
-def v1CreatePost(req: Request, body: CreateRequest) :
+async def v1CreatePost(req: Request, body: CreateRequest) :
 	"""
 	only auth required
 	"""
 
 	if any(body.dict().values()) :
-		return uploader.createPostWithFields(
+		return await uploader.createPostWithFields(
 			req.user,
 			body.reply_to,
 			body.title,
@@ -92,7 +92,7 @@ async def v1UpdatePost(req: Request, body: UpdateRequest) :
 
 
 @app.post('/v1/update_privacy')
-def v1UpdatePrivacy(req: Request, body: PrivacyRequest) :
+async def v1UpdatePrivacy(req: Request, body: PrivacyRequest) :
 	"""
 	{
 		"post_id": str,
@@ -100,7 +100,7 @@ def v1UpdatePrivacy(req: Request, body: PrivacyRequest) :
 	}
 	"""
 
-	if uploader.updatePrivacy(req.user.user_id, body.post_id, body.privacy) :
+	if await uploader.updatePrivacy(req.user, body.post_id, body.privacy) :
 		return NoContentResponse
 
 

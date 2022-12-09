@@ -1,6 +1,5 @@
 from datetime import datetime
-from enum import Enum, unique
-from typing import Optional
+from typing import List, Optional
 
 from kh_common.models.privacy import Privacy
 from kh_common.models.rating import Rating
@@ -72,3 +71,16 @@ class Post(BaseModel) :
 	updated: Optional[datetime]
 	filename: Optional[str]
 	media_type: Optional[MediaType]
+
+
+class TagPortable(str) :
+	pass
+
+
+class TagGroups(BaseModel) :
+	artist: Optional[List[TagPortable]]
+	subject: Optional[List[TagPortable]]
+	sponsor: Optional[List[TagPortable]]
+	species: Optional[List[TagPortable]]
+	gender: Optional[List[TagPortable]]
+	misc: Optional[List[TagPortable]]
