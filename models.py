@@ -62,7 +62,7 @@ class Post(BaseModel) :
 	user_id: int
 	title: Optional[str]
 	description: Optional[str]
-	user: UserPortable
+	user: str
 	score: Optional[Score]
 	rating: Rating
 	parent: Optional[str]
