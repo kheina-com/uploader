@@ -6,7 +6,7 @@ from math import floor
 from os import remove
 from secrets import token_bytes
 from time import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -32,6 +32,8 @@ from wand.image import Image
 
 from models import Coordinates, MediaType, Post, PostSize, TagGroups
 
+
+KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
 
 Posts: Gateway = Gateway(posts_host + '/v1/post/{post_id}', Post)
 Users: Gateway = Gateway(users_host + '/v1/fetch_self', User)
@@ -341,7 +343,7 @@ class Uploader(SqlInterface, B2Interface) :
 						fullsize_image = self.get_image_data(image, compress = False)
 
 					# optimize
-					updated = transaction.query("""
+					updated: Tuple[datetime] = transaction.query("""
 						UPDATE kheina.public.posts
 							SET width = %s,
 								height = %s
@@ -351,6 +353,7 @@ class Uploader(SqlInterface, B2Interface) :
 						(*image.size, post_id),
 						fetch_one=True,
 					)
+					updated: datetime = updated[0]
 					image_size: PostSize = PostSize(
 						width=image.size[0],
 						height=image.size[1],
