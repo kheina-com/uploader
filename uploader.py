@@ -131,7 +131,7 @@ class Uploader(SqlInterface, B2Interface) :
 		try :
 			return Post.parse_obj(await KVS.get_async(post_id))
 
-		except aerospike.exceptions.RecordNotFound :
+		except aerospike.exception.RecordNotFound :
 			return None
 
 
