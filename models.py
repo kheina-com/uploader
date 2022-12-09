@@ -71,6 +71,7 @@ class Post(BaseModel) :
 	updated: Optional[datetime]
 	filename: Optional[str]
 	media_type: Optional[MediaType]
+	size: Optional[PostSize]
 
 
 class TagPortable(str) :
