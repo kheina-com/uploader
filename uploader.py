@@ -33,8 +33,6 @@ from wand.image import Image
 from models import Coordinates, MediaType, Post, PostSize, TagGroups
 
 
-KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
-
 Posts: Gateway = Gateway(posts_host + '/v1/post/{post_id}', Post)
 Users: Gateway = Gateway(users_host + '/v1/fetch_self', User)
 Tags = Gateway(tags_host + '/v1/fetch_tags/{post_id}', TagGroups)
@@ -513,11 +511,11 @@ class Uploader(SqlInterface, B2Interface) :
 				raise NotFound('the provided post does not exist or it does not belong to this account.')
 
 			if data[0] == privacy.name :
-				raise BadRequest("post privacy cannot be updated to the previous privacy level.")
+				raise BadRequest('post privacy cannot be updated to the current privacy level.')
 
 			tags = Tags(post_id=post_id, auth=user.token.token_string if user.token else None)
 
-			if data[0] == 'unpublished' :
+			if data[0] == Privacy.unpublished.name :
 				query = """
 					INSERT INTO kheina.public.post_votes
 					(user_id, post_id, upvote)
