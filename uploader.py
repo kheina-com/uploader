@@ -560,11 +560,11 @@ class Uploader(SqlInterface, B2Interface) :
 				t.commit()
 
 			if privacy == Privacy.public :
-				for tag in flatten(await tags) :
+				for tag in filter(None, flatten((await tags).dict())) :
 					self._increment_tag_count(tag)
 
 			else :
-				for tag in flatten(await tags) :
+				for tag in filter(None, flatten((await tags).dict())) :
 					self._decrement_tag_count(tag)
 
 		return True
