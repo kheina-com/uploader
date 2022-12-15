@@ -8,7 +8,24 @@ from models import CreateRequest, IconRequest, PrivacyRequest, UpdateRequest
 from uploader import Uploader
 
 
-app = ServerApp()
+app = ServerApp(
+	allowed_hosts = [
+		'localhost',
+		'127.0.0.1',
+		'*.kheina.com',
+		'kheina.com',
+		'*.fuzz.ly',
+		'fuzz.ly',
+	],
+	allowed_origins = [
+		'localhost',
+		'127.0.0.1',
+		'dev.kheina.com',
+		'kheina.com',
+		'dev.fuzz.ly',
+		'fuzz.ly',
+	],
+)
 uploader = Uploader()
 
 
