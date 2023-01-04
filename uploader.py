@@ -40,10 +40,6 @@ KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
 CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
 
 
-class Privacy(Privacy) :
-	draft: str = 'draft'
-
-
 class Uploader(SqlInterface, B2Interface) :
 
 	def __init__(self: 'Uploader') -> None :

@@ -1,4 +1,4 @@
-kh-common[aerospike,auth,logging,scoring,sql]~=0.6.2
+kh-common[aerospike,auth,logging,scoring,sql]~=0.6.4
 pillow~=7.2.0
 python-multipart~=0.0.5
 PyExifTool~=0.4.11
