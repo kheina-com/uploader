@@ -6,7 +6,7 @@ from math import floor
 from os import remove
 from secrets import token_bytes
 from time import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Set
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -38,6 +38,7 @@ Users: Gateway = Gateway(users_host + '/v1/fetch_self', User)
 Tags = Gateway(tags_host + '/v1/fetch_tags/{post_id}', TagGroups)
 KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
 CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
+UnpublishedPrivacies: Set[Privacy] = { Privacy.unpublished, Privacy.draft }
 
 
 class Uploader(SqlInterface, B2Interface) :
@@ -495,7 +496,7 @@ class Uploader(SqlInterface, B2Interface) :
 		self._validatePostId(post_id)
 
 		if privacy == Privacy.unpublished :
-			raise BadRequest('post privacy cannot be updated "unpublished".')
+			raise BadRequest('post privacy cannot be updated to unpublished.')
 
 		with transaction or self.transaction() as t :
 			data = t.query("""
@@ -523,7 +524,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 			tags = Tags(post_id=post_id, auth=user.token.token_string if user.token else None)
 
-			if old_privacy in { Privacy.unpublished, Privacy.draft } :
+			if old_privacy in UnpublishedPrivacies and privacy not in UnpublishedPrivacies :
 				query = """
 					INSERT INTO kheina.public.post_votes
 					(user_id, post_id, upvote)
