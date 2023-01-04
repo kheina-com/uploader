@@ -40,6 +40,10 @@ KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
 CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
 
 
+class Privacy(Privacy) :
+	draft: str = 'draft'
+
+
 class Uploader(SqlInterface, B2Interface) :
 
 	def __init__(self: 'Uploader') -> None :
@@ -494,6 +498,9 @@ class Uploader(SqlInterface, B2Interface) :
 	async def _update_privacy(self: 'Uploader', user: KhUser, post_id: str, privacy: Privacy, transaction: Transaction = None, commit: bool = True) :
 		self._validatePostId(post_id)
 
+		if privacy == Privacy.unpublished :
+			raise BadRequest('post privacy cannot be updated "unpublished".')
+
 		with transaction or self.transaction() as t :
 			data = t.query("""
 				SELECT privacy.type
@@ -510,12 +517,17 @@ class Uploader(SqlInterface, B2Interface) :
 			if not data :
 				raise NotFound('the provided post does not exist or it does not belong to this account.')
 
-			if data[0] == privacy.name :
+			old_privacy: Privacy = Privacy[data[0]]
+
+			if old_privacy == privacy :
 				raise BadRequest('post privacy cannot be updated to the current privacy level.')
+
+			if privacy == Privacy.draft and old_privacy != Privacy.unpublished :
+				raise BadRequest('only unpublished posts can be marked as drafts.')
 
 			tags = Tags(post_id=post_id, auth=user.token.token_string if user.token else None)
 
-			if data[0] == Privacy.unpublished.name :
+			if old_privacy in { Privacy.unpublished, Privacy.draft } :
 				query = """
 					INSERT INTO kheina.public.post_votes
 					(user_id, post_id, upvote)
@@ -563,7 +575,7 @@ class Uploader(SqlInterface, B2Interface) :
 				for tag in filter(None, flatten((await tags).dict())) :
 					self._increment_tag_count(tag)
 
-			else :
+			elif old_privacy == Privacy.public :
 				for tag in filter(None, flatten((await tags).dict())) :
 					self._decrement_tag_count(tag)
 
