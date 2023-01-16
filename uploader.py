@@ -182,7 +182,6 @@ class Uploader(SqlInterface, B2Interface) :
 					AND privacy_id = privacy_to_id('unpublished');
 				""",
 				(post_id, user.user_id, user.user_id),
-				commit=True,
 				fetch_one=True,
 			)
 
