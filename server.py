@@ -50,7 +50,7 @@ async def v1CreatePost(req: Request, body: CreateRequest) :
 			body.rating,
 		)
 
-	return uploader.createPost(req.user.user_id)
+	return await uploader.createPost(req.user)
 
 
 @app.post('/v1/upload_image')

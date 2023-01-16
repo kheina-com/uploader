@@ -6,16 +6,16 @@ from math import floor
 from os import remove
 from secrets import token_bytes
 from time import time
-from typing import Any, Dict, List, Optional, Tuple, Union, Set
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import aerospike
 from aiohttp import ClientResponseError, request
 from exiftool import ExifTool
+from fuzzly_posts.models import int_to_post_id
 from kh_common.auth import KhUser
 from kh_common.backblaze import B2Interface
-from kh_common.base64 import b64encode
 from kh_common.caching.key_value_store import KeyValueStore
 from kh_common.config.constants import posts_host, tags_host, users_host
 from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
@@ -27,7 +27,7 @@ from kh_common.scoring import confidence
 from kh_common.scoring import controversial as calc_cont
 from kh_common.scoring import hot as calc_hot
 from kh_common.sql import SqlInterface, Transaction
-from kh_common.utilities import flatten
+from kh_common.utilities import flatten, int_from_bytes
 from wand.image import Image
 
 from models import Coordinates, MediaType, Post, PostSize, TagGroups
@@ -160,18 +160,35 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	@HttpErrorHandler('creating new post')
-	def createPost(self: 'Uploader', user_id: int) -> Dict[str, Union[str, int]] :
-		data: List[str] = self.query("""
-			SELECT kheina.public.create_new_post(%s);
-			""",
-			(user_id,),
-			commit=True,
-			fetch_one=True,
-		)
+	async def createPost(self: 'Uploader', user: KhUser) -> Dict[str, Union[str, int]] :
+		with self.transaction() as transaction :
+			post_id: int
+
+			while True :
+				post_id = int_from_bytes(token_bytes(6))
+				data = transaction.query("SELECT count(1) FROM kheina.public.posts WHERE post_id = %s;", (post_id,), fetch_one=True)
+				if not data[0] :
+					break
+
+			data: List[str] = transaction.query("""
+				INSERT INTO kheina.public.posts
+				(post_id, uploader, privacy_id)
+				VALUES
+				(%s, %s, privacy_to_id('unpublished'))
+				ON CONFLICT (uploader, privacy_id) WHERE privacy_id = 4 DO NOTHING;
+
+				SELECT post_id FROM kheina.public.posts
+				WHERE uploader = %s
+					AND privacy_id = privacy_to_id('unpublished');
+				""",
+				(post_id, user.user_id, user.user_id),
+				commit=True,
+				fetch_one=True,
+			)
 
 		return {
-			'user_id': user_id,
-			'post_id': data[0],
+			'user_id': user.user_id,
+			'post_id': int_to_post_id(data[0]),
 		}
 
 
@@ -203,12 +220,12 @@ class Uploader(SqlInterface, B2Interface) :
 			values.append('rating_to_id(%s)')
 			params.append(rating)
 
-		post_id = None
+		post_id: int
 
 		with self.transaction() as transaction :
 			while True :
-				post_id = b64encode(token_bytes(6)).decode()
-				data = transaction.query(f"SELECT count(1) FROM kheina.public.posts WHERE post_id = '{post_id}'", fetch_one=True)
+				post_id = int_from_bytes(token_bytes(6))
+				data = transaction.query("SELECT count(1) FROM kheina.public.posts WHERE post_id = %s;", (post_id,), fetch_one=True)
 				if not data[0] :
 					break
 
