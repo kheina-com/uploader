@@ -236,9 +236,9 @@ class Uploader(SqlInterface, B2Interface) :
 
 			data = transaction.query(f"""
 				INSERT INTO kheina.public.posts
-				({','.join(columns)})
+				(privacy_id, {','.join(columns)})
 				VALUES
-				({','.join(values)})
+				(privacy_to_id('draft'), {','.join(values)})
 				RETURNING {','.join(return_cols)};
 				""",
 				[internal_post_id] + params,
