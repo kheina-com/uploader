@@ -186,6 +186,7 @@ class Uploader(SqlInterface, B2Interface) :
 				""",
 				(post_id, user.user_id, user.user_id),
 				fetch_one=True,
+				commit=True,
 			)
 
 		return {
