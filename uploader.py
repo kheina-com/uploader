@@ -252,14 +252,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 			transaction.commit()
 
-		post: Post = Post(
-			user_id=user.user_id,
-			privacy=privacy or Privacy.unpublished,
-			**dict(zip(columns + ['created', 'updated'], [post_id] + params + list(data))),
-		)
-
-		# store this post in cache
-		KVS.put(post_id, post.dict())
+		# TODO: cache post
 
 		return {
 			'post_id': post_id,
