@@ -362,7 +362,7 @@ class Uploader(SqlInterface, B2Interface) :
 								width = %s,
 								height = %s
 						WHERE posts.post_id = %s
-							AND posts.uploader = %s;
+							AND posts.uploader = %s
 						RETURNING posts.updated_on;
 						""",
 						(
