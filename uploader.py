@@ -16,6 +16,7 @@ from exiftool import ExifTool
 from fuzzly_posts.models import int_to_post_id
 from kh_common.auth import KhUser
 from kh_common.backblaze import B2Interface
+from kh_common.base64 import b64decode
 from kh_common.caching.key_value_store import KeyValueStore
 from kh_common.config.constants import posts_host, tags_host, users_host
 from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
@@ -148,6 +149,8 @@ class Uploader(SqlInterface, B2Interface) :
 		if len(post_id) != 8 :
 			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
 
+		return int_from_bytes(b64decode(post_id))
+
 
 	def _validateTitle(self: 'Uploader', title: str) :
 		if title and len(title) > 100 :
@@ -197,10 +200,10 @@ class Uploader(SqlInterface, B2Interface) :
 		params: List[Any] = [user.user_id]
 
 		if reply_to :
-			self._validatePostId(reply_to)
+			internal_reply_to: int = self._validatePostId(reply_to)
 			columns.append('parent')
 			values.append('%s')
-			params.append(reply_to)
+			params.append(internal_reply_to)
 
 		if title :
 			self._validateTitle(title)
@@ -219,12 +222,13 @@ class Uploader(SqlInterface, B2Interface) :
 			values.append('rating_to_id(%s)')
 			params.append(rating)
 
-		post_id: int
+		internal_post_id: int
+		post_id: str
 
 		with self.transaction() as transaction :
 			while True :
-				post_id = int_from_bytes(token_bytes(6))
-				data = transaction.query("SELECT count(1) FROM kheina.public.posts WHERE post_id = %s;", (post_id,), fetch_one=True)
+				internal_post_id = int_from_bytes(token_bytes(6))
+				data = transaction.query("SELECT count(1) FROM kheina.public.posts WHERE post_id = %s;", (internal_post_id,), fetch_one=True)
 				if not data[0] :
 					break
 
@@ -237,9 +241,11 @@ class Uploader(SqlInterface, B2Interface) :
 				({','.join(values)})
 				RETURNING {','.join(return_cols)};
 				""",
-				[post_id] + params,
+				[internal_post_id] + params,
 				fetch_one=True,
 			)
+
+			post_id = int_to_post_id(internal_post_id)
 
 			if privacy :
 				await self._update_privacy(user, post_id, privacy, transaction=transaction, commit=False)
@@ -285,12 +291,11 @@ class Uploader(SqlInterface, B2Interface) :
 		user: KhUser,
 		file_data: bytes,
 		filename: str,
-		post_id: Union[str, None] = None,
+		post_id: str,
 		emoji_name: str = None,
-		web_resize: bool = None,
+		web_resize: int = 0,
 	) -> Dict[str, Union[str, int, List[str]]] :
-		if post_id :
-			self._validatePostId(post_id)
+		internal_post_id: int = self._validatePostId(post_id)
 
 		# validate it's an actual photo
 		with Image(blob=file_data) as image :
@@ -322,50 +327,52 @@ class Uploader(SqlInterface, B2Interface) :
 		if web_resize :
 			dot_index: int = filename.rfind('.')
 
-			if dot_index and filename[dot_index + 1:] in self.mime_types :
+			if dot_index and filename[dot_index + 1:].lower() in self.mime_types :
 				filename = filename[:dot_index] + '-web' + filename[dot_index:]
 
 		try :
 			with self.transaction() as transaction :
-				old_filename: List[str] = transaction.query("""
+				data: List[str] = transaction.query("""
 					SELECT posts.filename from kheina.public.posts
 					WHERE posts.post_id = %s
+						AND uploader = %s;
 					""",
-					(post_id,),
+					(internal_post_id, user.user_id),
 					fetch_one=True,
 				)
 
-				data: List[str] = transaction.query("""
-					CALL kheina.public.user_upload_file(%s, %s, %s, %s);
-					""",
-					(
-						user.user_id,
-						post_id,
-						content_type,
-						filename,
-					),
-					fetch_one=True,
-				)
-
+				# if the user owns the above post, then data should always be populated, even if it's just [None]
 				if not data :
 					raise Forbidden('the post you are trying to upload to does not belong to this account.')
 
+				old_filename: str = data[0]
 				fullsize_image: bytes
 
 				with Image(file=open(file_on_disk, 'rb')) as image :
 					if web_resize :
-						image: Image = self.convert_image(image, self.web_size)
+						image: Image = self.convert_image(image, web_resize)
 						fullsize_image = self.get_image_data(image, compress = False)
 
 					# optimize
 					updated: Tuple[datetime] = transaction.query("""
 						UPDATE kheina.public.posts
-							SET width = %s,
+							SET updated_on = NOW(),
+								media_type_id = media_mime_type_to_id(%s),
+								filename = %s,
+								width = %s,
 								height = %s
 						WHERE posts.post_id = %s
+							AND posts.uploader = %s;
 						RETURNING posts.updated_on;
 						""",
-						(*image.size, post_id),
+						(
+							content_type,
+							filename,
+							image.size[0],
+							image.size[1],
+							internal_post_id,
+							user.user_id,
+						),
 						fetch_one=True,
 					)
 					updated: datetime = updated[0]
@@ -374,11 +381,10 @@ class Uploader(SqlInterface, B2Interface) :
 						height=image.size[1],
 					)
 
-				if post_id and old_filename and old_filename[0] :
-					if not await self.b2_delete_file_async(f'{post_id}/{old_filename[0]}') :
-						self.logger.error(f'failed to delete old image: {post_id}/{old_filename[0]}')
+				if old_filename :
+					if not await self.b2_delete_file_async(f'{post_id}/{old_filename}') :
+						self.logger.error(f'failed to delete old image: {post_id}/{old_filename}')
 
-				post_id: str = data[0]
 				url: str = f'{post_id}/{filename}'
 
 				if not web_resize :
@@ -439,7 +445,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 	@HttpErrorHandler('updating post metadata')
 	async def updatePostMetadata(self: 'Uploader', user: KhUser, post_id: str, title:str=None, description:str=None, privacy:Privacy=None, rating:Rating=None) -> Dict[str, Union[str, int, Dict[str, Union[None, str]]]]:
-		self._validatePostId(post_id)
+		internal_post_id: int = self._validatePostId(post_id)
 		self._validateTitle(title)
 		self._validateDescription(description)
 
@@ -481,12 +487,12 @@ class Uploader(SqlInterface, B2Interface) :
 					AND post_id = %s
 				RETURNING {','.join(return_cols)};
 				""",
-				params + [user.user_id, post_id],
+				params + [user.user_id, internal_post_id],
 				fetch_one=True,
 			)
 
 			if privacy :
-				await self._update_privacy(user, post_id, privacy, transaction=t, commit=True)
+				await self._update_privacy(user, internal_post_id, privacy, transaction=t, commit=True)
 
 			else :
 				t.commit()
@@ -509,7 +515,7 @@ class Uploader(SqlInterface, B2Interface) :
 
 
 	async def _update_privacy(self: 'Uploader', user: KhUser, post_id: str, privacy: Privacy, transaction: Transaction = None, commit: bool = True) :
-		self._validatePostId(post_id)
+		internal_post_id: int = self._validatePostId(post_id)
 
 		if privacy == Privacy.unpublished :
 			raise BadRequest('post privacy cannot be updated to unpublished.')
@@ -523,7 +529,7 @@ class Uploader(SqlInterface, B2Interface) :
 				WHERE posts.uploader = %s
 					AND posts.post_id = %s;
 				""",
-				(user.user_id, post_id),
+				(user.user_id, internal_post_id),
 				fetch_one=True,
 			)
 
@@ -562,9 +568,9 @@ class Uploader(SqlInterface, B2Interface) :
 						AND posts.post_id = %s;
 				"""
 				params = (
-					user.user_id, post_id, True,
-					post_id, 1, 0, 1, calc_hot(1, 0, time()), confidence(1, 1), calc_cont(1, 0),
-					privacy.name, user.user_id, post_id,
+					user.user_id, internal_post_id, True,
+					internal_post_id, 1, 0, 1, calc_hot(1, 0, time()), confidence(1, 1), calc_cont(1, 0),
+					privacy.name, user.user_id, internal_post_id,
 				)
 
 			else :
@@ -576,7 +582,7 @@ class Uploader(SqlInterface, B2Interface) :
 						AND posts.post_id = %s;
 				"""
 				params = (
-					privacy.name, user.user_id, post_id,
+					privacy.name, user.user_id, internal_post_id,
 				)
 
 			t.query(query, params)

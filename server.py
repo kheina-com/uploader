@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, List, Union
 
 from fastapi import File, Form, UploadFile
 from fastapi.responses import UJSONResponse
@@ -54,7 +54,7 @@ async def v1CreatePost(req: Request, body: CreateRequest) :
 
 
 @app.post('/v1/upload_image')
-async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Optional[str] = Form(None), web_resize: Optional[bool] = Form(None)) :
+async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: str = Form(None), web_resize: Optional[int] = Form(None)) :
 	"""
 	FORMDATA: {
 		"post_id": Optional[str],
@@ -63,25 +63,36 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Op
 	}
 	"""
 
+	# since it doesn't do this for us, send the proper error back
+	detail: List[Dict[str, Union[str, List[str]]]] = []
+
 	if not file :
-		# since it doesn't do this for us, send the proper error back
-		return UJSONResponse({
-			'detail': [
-				{
-					'loc': [
-						'body',
-						'file'
-					],
-					'msg': 'field required',
-					'type': 'value_error.missing',
-				},
-			]
-		}, status_code=422)
+		detail.append({
+			'loc': [
+				'body',
+				'file'
+			],
+			'msg': 'field required',
+			'type': 'value_error.missing',
+		})
+
+	if not post_id :
+		detail.append({
+			'loc': [
+				'body',
+				'post_id'
+			],
+			'msg': 'field required',
+			'type': 'value_error.missing',
+		})
+
+	if detail :
+		return UJSONResponse({ 'detail': detail }, status_code=422)
 
 	return await uploader.uploadImage(
-		req.user,
-		file.file.read(),
-		file.filename,
+		user=req.user,
+		file_data=file.file.read(),
+		filename=file.filename,
 		post_id=post_id,
 		web_resize=web_resize,
 	)
