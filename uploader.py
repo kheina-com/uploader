@@ -584,7 +584,7 @@ class Uploader(SqlInterface, B2Interface) :
 				t.commit()
 
 			try :
-				tags = await tags
+				tags: TagGroups = await tags
 
 			except ClientResponseError as e :
 				if e.status == 404 :
@@ -593,11 +593,11 @@ class Uploader(SqlInterface, B2Interface) :
 				raise
 
 			if privacy == Privacy.public :
-				for tag in filter(None, flatten((await tags).dict())) :
+				for tag in filter(None, flatten(tags.dict())) :
 					self._increment_tag_count(tag)
 
 			elif old_privacy == Privacy.public :
-				for tag in filter(None, flatten((await tags).dict())) :
+				for tag in filter(None, flatten(tags.dict())) :
 					self._decrement_tag_count(tag)
 
 		return True
