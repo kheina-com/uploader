@@ -590,6 +590,15 @@ class Uploader(SqlInterface, B2Interface) :
 			if commit :
 				t.commit()
 
+			try :
+				tags = await tags
+
+			except ClientResponseError as e :
+				if e.status == 404 :
+					return True
+
+				raise
+
 			if privacy == Privacy.public :
 				for tag in filter(None, flatten((await tags).dict())) :
 					self._increment_tag_count(tag)
