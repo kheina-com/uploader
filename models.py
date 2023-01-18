@@ -1,10 +1,9 @@
-from datetime import datetime
 from typing import List, Optional
 
+from fuzzly_posts.models import PostId, PostIdValidator
 from kh_common.models.privacy import Privacy
 from kh_common.models.rating import Rating
-from kh_common.models.user import UserPortable
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 
 
 class PostSize(BaseModel) :
@@ -13,7 +12,9 @@ class PostSize(BaseModel) :
 
 
 class UpdateRequest(BaseModel) :
-	post_id: str
+	_post_id_validator = PostIdValidator
+
+	post_id: PostId
 	title: Optional[str]
 	description: Optional[str]
 	rating: Optional[Rating]
@@ -21,15 +22,22 @@ class UpdateRequest(BaseModel) :
 
 
 class CreateRequest(BaseModel) :
-	reply_to: Optional[str]
+	reply_to: Optional[PostId]
 	title: Optional[str]
 	description: Optional[str]
 	rating: Optional[Rating]
 	privacy: Optional[Privacy]
 
+	@validator('reply_to', pre=True, always=True)
+	def _parent_validator(value) :
+		if value :
+			return PostId(value)
+
 
 class PrivacyRequest(BaseModel) :
-	post_id: str
+	_post_id_validator = PostIdValidator
+
+	post_id: PostId
 	privacy: Privacy
 
 
@@ -41,7 +49,9 @@ class Coordinates(BaseModel) :
 
 
 class IconRequest(BaseModel) :
-	post_id: str
+	_post_id_validator = PostIdValidator
+
+	post_id: PostId
 	coordinates: Coordinates
 
 
@@ -55,23 +65,6 @@ class Score(BaseModel) :
 class MediaType(BaseModel) :
 	file_type: str
 	mime_type: str
-
-
-class Post(BaseModel) :
-	post_id: str
-	user_id: int
-	title: Optional[str]
-	description: Optional[str]
-	user: str
-	score: Optional[Score]
-	rating: Rating
-	parent: Optional[str]
-	privacy: Privacy
-	created: Optional[datetime]
-	updated: Optional[datetime]
-	filename: Optional[str]
-	media_type: Optional[MediaType]
-	size: Optional[PostSize]
 
 
 class TagPortable(str) :

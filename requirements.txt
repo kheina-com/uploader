@@ -3,4 +3,4 @@ pillow~=7.2.0
 python-multipart~=0.0.5
 PyExifTool~=0.4.11
 Wand~=0.6.7
-fuzzly_posts~=0.0.7
+fuzzly_posts~=0.1.3

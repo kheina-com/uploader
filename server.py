@@ -1,7 +1,8 @@
-from typing import Optional, Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from fastapi import File, Form, UploadFile
 from fastapi.responses import UJSONResponse
+from fuzzly_posts.models import PostId
 from kh_common.server import NoContentResponse, Request, ServerApp
 
 from models import CreateRequest, IconRequest, PrivacyRequest, UpdateRequest
@@ -54,7 +55,7 @@ async def v1CreatePost(req: Request, body: CreateRequest) :
 
 
 @app.post('/v1/upload_image')
-async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: str = Form(None), web_resize: Optional[int] = Form(None)) :
+async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: PostId = Form(None), web_resize: Optional[int] = Form(None)) :
 	"""
 	FORMDATA: {
 		"post_id": Optional[str],
@@ -93,7 +94,7 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: st
 		user=req.user,
 		file_data=file.file.read(),
 		filename=file.filename,
-		post_id=post_id,
+		post_id=PostId(post_id),
 		web_resize=web_resize,
 	)
 
