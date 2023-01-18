@@ -18,9 +18,8 @@ from fuzzly_posts.models import Post, PostId
 from fuzzly_posts.models.internal import InternalPost
 from kh_common.auth import KhUser
 from kh_common.backblaze import B2Interface
-from kh_common.base64 import b64decode
 from kh_common.caching.key_value_store import KeyValueStore
-from kh_common.config.constants import posts_host, tags_host, users_host
+from kh_common.config.constants import tags_host, users_host
 from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
 from kh_common.gateway import Gateway
 from kh_common.models.privacy import Privacy
@@ -33,7 +32,7 @@ from kh_common.sql import SqlInterface, Transaction
 from kh_common.utilities import flatten, int_from_bytes
 from wand.image import Image
 
-from models import Coordinates, MediaType, Post, PostSize, TagGroups
+from models import Coordinates, MediaType, PostSize, TagGroups
 
 
 Users: Gateway = Gateway(users_host + '/v1/fetch_self', User)
