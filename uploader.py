@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from io import BytesIO
 from math import floor
-from os import remove
+from os import makedirs, path, remove
 from secrets import token_bytes
 from time import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -27,7 +27,6 @@ from kh_common.utilities import flatten, int_from_bytes
 from wand.image import Image
 
 from models import Coordinates
-
 from scoring import confidence
 from scoring import controversial as calc_cont
 from scoring import hot as calc_hot
@@ -37,6 +36,10 @@ KVS: KeyValueStore = KeyValueStore('kheina', 'posts-v2')
 CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
 UnpublishedPrivacies: Set[Privacy] = { Privacy.unpublished, Privacy.draft }
 client: InternalClient = InternalClient(fuzzly_client_token)
+
+
+if not path.isdir('images') :
+	makedirs('images')
 
 
 class Uploader(SqlInterface, B2Interface) :
