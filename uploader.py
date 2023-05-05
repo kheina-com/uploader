@@ -13,18 +13,15 @@ from uuid import UUID, uuid4
 import aerospike
 from aiohttp import ClientResponseError, request
 from exiftool import ExifTool
-from fuzzly_posts import PostGateway
-from fuzzly_posts.models import Post, PostId
-from fuzzly_posts.models.internal import InternalPost
+from fuzzly.internal import InternalClient
+from fuzzly.models.internal import InternalPost, InternalUser
+from fuzzly.models.post import MediaType, Post, PostId, PostSize, Privacy, Rating
+from fuzzly.models.tag import TagGroups
 from kh_common.auth import KhUser
 from kh_common.backblaze import B2Interface
 from kh_common.caching.key_value_store import KeyValueStore
-from kh_common.config.constants import tags_host, users_host
+from kh_common.config.credentials import fuzzly_client_token
 from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
-from kh_common.gateway import Gateway
-from kh_common.models.privacy import Privacy
-from kh_common.models.rating import Rating
-from kh_common.models.user import User
 from kh_common.scoring import confidence
 from kh_common.scoring import controversial as calc_cont
 from kh_common.scoring import hot as calc_hot
@@ -32,14 +29,13 @@ from kh_common.sql import SqlInterface, Transaction
 from kh_common.utilities import flatten, int_from_bytes
 from wand.image import Image
 
-from models import Coordinates, MediaType, PostSize, TagGroups
+from models import Coordinates
 
 
-Users: Gateway = Gateway(users_host + '/v1/fetch_self', User)
-Tags = Gateway(tags_host + '/v1/fetch_tags/{post_id}', TagGroups)
 KVS: KeyValueStore = KeyValueStore('kheina', 'posts-v2')
 CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
 UnpublishedPrivacies: Set[Privacy] = { Privacy.unpublished, Privacy.draft }
+client: InternalClient = InternalClient(fuzzly_client_token)
 
 
 class Uploader(SqlInterface, B2Interface) :
@@ -75,8 +71,8 @@ class Uploader(SqlInterface, B2Interface) :
 		return item
 
 
-	def _populate_tag_cache(self, tag: str) -> None :
-		if not CountKVS.exists(tag) :
+	async def _populate_tag_cache(self, tag: str) -> None :
+		if not await CountKVS.exists_async(tag) :
 			# we gotta populate it here (sad)
 			data = self.query("""
 				SELECT COUNT(1)
@@ -91,16 +87,16 @@ class Uploader(SqlInterface, B2Interface) :
 				(tag,),
 				fetch_one=True,
 			)
-			CountKVS.put(tag, int(data[0]), -1)
+			await CountKVS.put_async(tag, int(data[0]), -1)
 
 
-	def _get_tag_count(self, tag: str) -> int :
-		self._populate_tag_cache(tag)
-		return CountKVS.get(tag)
+	async def _get_tag_count(self, tag: str) -> int :
+		await self._populate_tag_cache(tag)
+		return await CountKVS.get_async(tag)
 
 
-	def _increment_tag_count(self, tag: str) -> None :
-		self._populate_tag_cache(tag)
+	async def _increment_tag_count(self, tag: str) -> None :
+		await self._populate_tag_cache(tag)
 		KeyValueStore._client.increment(
 			(CountKVS._namespace, CountKVS._set, tag),
 			'data',
@@ -114,8 +110,8 @@ class Uploader(SqlInterface, B2Interface) :
 		)
 
 
-	def _decrement_tag_count(self, tag: str) -> None :
-		self._populate_tag_cache(tag)
+	async def _decrement_tag_count(self, tag: str) -> None :
+		await self._populate_tag_cache(tag)
 		KeyValueStore._client.increment(
 			(CountKVS._namespace, CountKVS._set, tag),
 			'data',
@@ -193,7 +189,7 @@ class Uploader(SqlInterface, B2Interface) :
 		columns: List[str] = ['post_id', 'uploader']
 		values: List[str] = ['%s', '%s']
 		params: List[Any] = [user.user_id]
-		uploader: Task[User] = ensure_future(Users(auth=user.token.token_string))
+		uploader: Task[InternalUser] = ensure_future(client.user(user.user_id))
 
 		post: InternalPost = InternalPost(
 			post_id=reply_to,
@@ -542,7 +538,7 @@ class Uploader(SqlInterface, B2Interface) :
 			if privacy == Privacy.draft and old_privacy != Privacy.unpublished :
 				raise BadRequest('only unpublished posts can be marked as drafts.')
 
-			tags = Tags(post_id=post_id, auth=user.token.token_string if user.token else None)
+			tags_task: Task[TagGroups] = client.post_tags(post_id)
 
 			if old_privacy in UnpublishedPrivacies and privacy not in UnpublishedPrivacies :
 				query = """
@@ -589,7 +585,7 @@ class Uploader(SqlInterface, B2Interface) :
 				t.commit()
 
 			try :
-				tags: TagGroups = await tags
+				tags: TagGroups = await tags_task
 
 			except ClientResponseError as e :
 				if e.status == 404 :
@@ -599,11 +595,11 @@ class Uploader(SqlInterface, B2Interface) :
 
 			if privacy == Privacy.public :
 				for tag in filter(None, flatten(tags.dict())) :
-					self._increment_tag_count(tag)
+					ensure_future(self._increment_tag_count(tag))
 
 			elif old_privacy == Privacy.public :
 				for tag in filter(None, flatten(tags.dict())) :
-					self._decrement_tag_count(tag)
+					ensure_future(self._decrement_tag_count(tag))
 
 		return True
 
@@ -623,16 +619,16 @@ class Uploader(SqlInterface, B2Interface) :
 		if coordinates.width != coordinates.height :
 			raise BadRequest(f'icons must be square. width({coordinates.width}) != height({coordinates.height})')
 
-		post: Task[Post] = ensure_future(PostGateway(post_id=post_id))
-		user: Task[User] = ensure_future(Users(auth=user.token.token_string))
+		ipost: Task[InternalPost] = ensure_future(client.post(post_id))
+		iuser: Task[InternalUser] = ensure_future(client.user(user.user_id))
 		image = None
 
-		post: Post = await post
+		ipost: InternalPost = await ipost
 
 		try :
 			async with request(
 				'GET',
-				f'https://cdn.kheina.com/file/kheina-content/{post_id}/{quote(post.filename)}',
+				f'https://cdn.kheina.com/file/kheina-content/{post_id}/{quote(ipost.filename)}',
 				raise_for_status=True,
 			) as response :
 				image = Image(blob=await response.read())
@@ -645,8 +641,8 @@ class Uploader(SqlInterface, B2Interface) :
 		image.crop(**coordinates.dict())
 		self.convert_image(image, self.icon_size)
 
-		user = await user
-		handle = user.handle.lower()
+		iuser: InternalUser = await iuser
+		handle = iuser.handle.lower()
 
 		self.b2_upload(self.get_image_data(image), f'{post_id}/icons/{handle}.webp', self.mime_types['webp'])
 
@@ -681,16 +677,16 @@ class Uploader(SqlInterface, B2Interface) :
 		if round(coordinates.width / 3) != coordinates.height :
 			raise BadRequest(f'banners must be a 3x:1 rectangle. round(width / 3)({round(coordinates.width / 3)}) != height({coordinates.height})')
 
-		post: Task[Post] = ensure_future(PostGateway(post_id=post_id))
-		user = ensure_future(Users(auth=user.token.token_string))
+		ipost: Task[InternalPost] = ensure_future(client.post(post_id))
+		iuser: Task[InternalUser] = ensure_future(client.user(user.user_id))
 		image = None
 
-		post: Post = await post
+		ipost: Post = await ipost
 
 		try :
 			async with request(
 				'GET',
-				f'https://cdn.kheina.com/file/kheina-content/{post_id}/{quote(post.filename)}',
+				f'https://cdn.kheina.com/file/kheina-content/{post_id}/{quote(ipost.filename)}',
 				raise_for_status=True,
 			) as response :
 				image = Image(blob=await response.read())
@@ -704,8 +700,8 @@ class Uploader(SqlInterface, B2Interface) :
 		if image.size[0] > self.banner_size * 3 or image.size[1] > self.banner_size :
 			image.resize(width=self.banner_size * 3, height=self.banner_size, filter=self.filter_function)
 
-		user = await user
-		handle = user.handle.lower()
+		iuser: InternalUser = await iuser
+		handle = iuser.handle.lower()
 
 		self.b2_upload(self.get_image_data(image), f'{post_id}/banners/{handle}.webp', self.mime_types['webp'])
 
