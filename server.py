@@ -10,6 +10,7 @@ from uploader import Uploader
 
 
 app = ServerApp(
+	auth_required = False,
 	allowed_hosts = [
 		'localhost',
 		'127.0.0.1',
@@ -40,6 +41,7 @@ async def v1CreatePost(req: Request, body: CreateRequest) :
 	"""
 	only auth required
 	"""
+	await req.user.authenticated()
 
 	if any(body.dict().values()) :
 		return await uploader.createPostWithFields(
@@ -63,6 +65,7 @@ async def v1UploadImage(req: Request, file: UploadFile = File(None), post_id: Po
 		"web_resize": Optional[bool],
 	}
 	"""
+	await req.user.authenticated()
 
 	# since it doesn't do this for us, send the proper error back
 	detail: List[Dict[str, Union[str, List[str]]]] = []
@@ -108,6 +111,7 @@ async def v1UpdatePost(req: Request, body: UpdateRequest) :
 		"description": Optional[str]
 	}
 	"""
+	await req.user.authenticated()
 
 	if await uploader.updatePostMetadata(
 		req.user,
@@ -128,6 +132,7 @@ async def v1UpdatePrivacy(req: Request, body: PrivacyRequest) :
 		"privacy": str
 	}
 	"""
+	await req.user.authenticated()
 
 	if await uploader.updatePrivacy(req.user, body.post_id, body.privacy) :
 		return NoContentResponse
@@ -135,12 +140,14 @@ async def v1UpdatePrivacy(req: Request, body: PrivacyRequest) :
 
 @app.post('/v1/set_icon')
 async def v1SetIcon(req: Request, body: IconRequest) :
+	await req.user.authenticated()
 	await uploader.setIcon(req.user, body.post_id, body.coordinates)
 	return NoContentResponse
 
 
 @app.post('/v1/set_banner')
 async def v1SetBanner(req: Request, body: IconRequest) :
+	await req.user.authenticated()
 	await uploader.setBanner(req.user, body.post_id, body.coordinates)
 	return NoContentResponse
 
