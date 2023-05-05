@@ -1,14 +1,7 @@
-from typing import List, Optional
+from typing import Optional
 
-from fuzzly_posts.models import PostId, PostIdValidator
-from kh_common.models.privacy import Privacy
-from kh_common.models.rating import Rating
+from fuzzly.models.post import PostId, PostIdValidator, Privacy, Rating
 from pydantic import BaseModel, validator
-
-
-class PostSize(BaseModel) :
-	width: int
-	height: int
 
 
 class UpdateRequest(BaseModel) :
@@ -55,26 +48,5 @@ class IconRequest(BaseModel) :
 	coordinates: Coordinates
 
 
-class Score(BaseModel) :
-	up: int
-	down: int
-	total: int
-	user_vote: Optional[int]
-
-
-class MediaType(BaseModel) :
-	file_type: str
-	mime_type: str
-
-
 class TagPortable(str) :
 	pass
-
-
-class TagGroups(BaseModel) :
-	artist: Optional[List[TagPortable]]
-	subject: Optional[List[TagPortable]]
-	sponsor: Optional[List[TagPortable]]
-	species: Optional[List[TagPortable]]
-	gender: Optional[List[TagPortable]]
-	misc: Optional[List[TagPortable]]
