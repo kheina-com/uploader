@@ -591,19 +591,19 @@ class Uploader(SqlInterface, B2Interface) :
 			try :
 				tags: TagGroups = await tags_task
 
+				if privacy == Privacy.public :
+					for tag in filter(None, flatten(tags)) :
+						ensure_future(self._increment_tag_count(tag))
+
+				elif old_privacy == Privacy.public :
+					for tag in filter(None, flatten(tags)) :
+						ensure_future(self._decrement_tag_count(tag))
+
 			except ClientResponseError as e :
 				if e.status == 404 :
 					return True
 
 				raise
-
-			if privacy == Privacy.public :
-				for tag in filter(None, flatten(tags.dict())) :
-					ensure_future(self._increment_tag_count(tag))
-
-			elif old_privacy == Privacy.public :
-				for tag in filter(None, flatten(tags.dict())) :
-					ensure_future(self._decrement_tag_count(tag))
 
 		return True
 
