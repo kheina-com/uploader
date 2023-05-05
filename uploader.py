@@ -22,14 +22,15 @@ from kh_common.backblaze import B2Interface
 from kh_common.caching.key_value_store import KeyValueStore
 from kh_common.config.credentials import fuzzly_client_token
 from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
-from kh_common.scoring import confidence
-from kh_common.scoring import controversial as calc_cont
-from kh_common.scoring import hot as calc_hot
 from kh_common.sql import SqlInterface, Transaction
 from kh_common.utilities import flatten, int_from_bytes
 from wand.image import Image
 
 from models import Coordinates
+
+from .scoring import confidence
+from .scoring import controversial as calc_cont
+from .scoring import hot as calc_hot
 
 
 KVS: KeyValueStore = KeyValueStore('kheina', 'posts-v2')
