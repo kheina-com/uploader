@@ -32,7 +32,7 @@ from scoring import controversial as calc_cont
 from scoring import hot as calc_hot
 
 
-KVS: KeyValueStore = KeyValueStore('kheina', 'posts-v2')
+KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
 CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
 UnpublishedPrivacies: Set[Privacy] = { Privacy.unpublished, Privacy.draft }
 client: InternalClient = InternalClient(fuzzly_client_token)
