@@ -28,9 +28,9 @@ from wand.image import Image
 
 from models import Coordinates
 
-from .scoring import confidence
-from .scoring import controversial as calc_cont
-from .scoring import hot as calc_hot
+from scoring import confidence
+from scoring import controversial as calc_cont
+from scoring import hot as calc_hot
 
 
 KVS: KeyValueStore = KeyValueStore('kheina', 'posts-v2')
