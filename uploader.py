@@ -585,9 +585,6 @@ class Uploader(SqlInterface, B2Interface) :
 
 			t.query(query, params)
 
-			if commit :
-				t.commit()
-
 			try :
 				tags: TagGroups = await tags_task
 
@@ -604,6 +601,9 @@ class Uploader(SqlInterface, B2Interface) :
 					return True
 
 				raise
+
+			if commit :
+				t.commit()
 
 		return True
 
