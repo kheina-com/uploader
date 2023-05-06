@@ -664,7 +664,7 @@ class Uploader(SqlInterface, B2Interface) :
 				AND LOWER(users.handle) = LOWER(%s)
 			RETURNING old.icon;
 			""",
-			(post_id, handle, handle),
+			(post_id.int(), handle, handle),
 			fetch_one=True,
 			commit=True,
 		)
@@ -722,7 +722,7 @@ class Uploader(SqlInterface, B2Interface) :
 				AND users.handle = LOWER(%s)
 			RETURNING old.banner;
 			""",
-			(post_id, handle, handle),
+			(post_id.int(), handle, handle),
 			fetch_one=True,
 			commit=True,
 		)
