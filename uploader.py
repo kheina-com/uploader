@@ -14,7 +14,7 @@ import aerospike
 from aiohttp import ClientResponseError, request
 from exiftool import ExifTool
 from fuzzly.internal import InternalClient
-from fuzzly.models.internal import InternalPost, InternalUser
+from fuzzly.models.internal import InternalPost, InternalUser, UserKVS
 from fuzzly.models.post import MediaType, Post, PostId, PostSize, Privacy, Rating
 from fuzzly.models.tag import TagGroups
 from kh_common.auth import KhUser
@@ -654,20 +654,19 @@ class Uploader(SqlInterface, B2Interface) :
 
 		image.close()
 
-
 		# update db to point to new icon
 		data = await self.query_async("""
-			UPDATE kheina.public.users AS users
+			UPDATE kheina.public.users
 				SET icon = %s
-			FROM (SELECT icon, handle FROM kheina.public.users WHERE LOWER(users.handle) = LOWER(%s)) AS old
-			WHERE users.handle = old.handle
-				AND LOWER(users.handle) = LOWER(%s)
-			RETURNING old.icon;
+			WHERE users.user_id = %s;
 			""",
-			(post_id.int(), handle, handle),
+			(post_id.int(), user.user_id),
 			fetch_one=True,
 			commit=True,
 		)
+
+		iuser.icon = post_id
+		ensure_future(UserKVS.put_async(str(iuser.user_id), iuser))
 
 		# cleanup old icons
 		if post_id != data[0] :
@@ -712,20 +711,19 @@ class Uploader(SqlInterface, B2Interface) :
 
 		image.close()
 
-
 		# update db to point to new banner
 		data = await self.query_async("""
-			UPDATE kheina.public.users AS users
+			UPDATE kheina.public.users
 				SET banner = %s
-			FROM (SELECT banner, handle FROM kheina.public.users WHERE users.handle = LOWER(%s)) AS old
-			WHERE users.handle = old.handle
-				AND users.handle = LOWER(%s)
-			RETURNING old.banner;
+			WHERE users.user_id = %s;
 			""",
-			(post_id.int(), handle, handle),
+			(post_id.int(), user.user_id),
 			fetch_one=True,
 			commit=True,
 		)
+
+		iuser.banner = post_id
+		ensure_future(UserKVS.put_async(str(iuser.user_id), iuser))
 
 		# cleanup old banners
 		if post_id != data[0] :
