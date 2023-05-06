@@ -655,7 +655,7 @@ class Uploader(SqlInterface, B2Interface) :
 		image.close()
 
 		# update db to point to new icon
-		data = await self.query_async("""
+		await self.query_async("""
 			UPDATE kheina.public.users
 				SET icon = %s
 			WHERE users.user_id = %s;
@@ -664,13 +664,13 @@ class Uploader(SqlInterface, B2Interface) :
 			commit=True,
 		)
 
+		# cleanup old icons
+		if post_id != iuser.icon :
+			await self.b2_delete_file_async(f'{iuser.icon}/icons/{handle}.webp')
+			await self.b2_delete_file_async(f'{iuser.icon}/icons/{handle}.jpg')
+
 		iuser.icon = post_id
 		ensure_future(UserKVS.put_async(str(iuser.user_id), iuser))
-
-		# cleanup old icons
-		if post_id != data[0] :
-			await self.b2_delete_file_async(f'{data[0]}/icons/{handle}.webp')
-			await self.b2_delete_file_async(f'{data[0]}/icons/{handle}.jpg')
 
 
 	@HttpErrorHandler('setting user banner')
@@ -711,7 +711,7 @@ class Uploader(SqlInterface, B2Interface) :
 		image.close()
 
 		# update db to point to new banner
-		data = await self.query_async("""
+		await self.query_async("""
 			UPDATE kheina.public.users
 				SET banner = %s
 			WHERE users.user_id = %s;
@@ -720,10 +720,10 @@ class Uploader(SqlInterface, B2Interface) :
 			commit=True,
 		)
 
+		# cleanup old banners
+		if post_id != iuser.banner :
+			await self.b2_delete_file_async(f'{iuser.banner}/banners/{handle}.webp')
+			await self.b2_delete_file_async(f'{iuser.banner}/banners/{handle}.jpg')
+
 		iuser.banner = post_id
 		ensure_future(UserKVS.put_async(str(iuser.user_id), iuser))
-
-		# cleanup old banners
-		if post_id != data[0] :
-			await self.b2_delete_file_async(f'{data[0]}/banners/{handle}.webp')
-			await self.b2_delete_file_async(f'{data[0]}/banners/{handle}.jpg')
