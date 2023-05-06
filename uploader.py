@@ -632,14 +632,13 @@ class Uploader(SqlInterface, B2Interface) :
 		try :
 			async with request(
 				'GET',
-				f'https://cdn.kheina.com/file/kheina-content/{post_id}/{quote(ipost.filename)}',
+				f'https://cdn.fuzz.ly/{post_id}/{quote(ipost.filename)}',
 				raise_for_status=True,
 			) as response :
 				image = Image(blob=await response.read())
 
 		except ClientResponseError as e :
 			raise BadGateway('unable to retrieve image from B2.', inner_exception=str(e))
-
 
 		# upload new icon
 		image.crop(**coordinates.dict())
@@ -690,14 +689,13 @@ class Uploader(SqlInterface, B2Interface) :
 		try :
 			async with request(
 				'GET',
-				f'https://cdn.kheina.com/file/kheina-content/{post_id}/{quote(ipost.filename)}',
+				f'https://cdn.fuzz.ly/{post_id}/{quote(ipost.filename)}',
 				raise_for_status=True,
 			) as response :
 				image = Image(blob=await response.read())
 
 		except ClientResponseError as e :
 			raise BadGateway('unable to retrieve image from B2.', inner_exception=str(e))
-
 
 		# upload new banner
 		image.crop(**coordinates.dict())
