@@ -1,8 +1,9 @@
 from asyncio import ensure_future
 from math import log10, sqrt
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 from fuzzly.models._database import DBI, ScoreCache, VoteCache
+from fuzzly.models.internal import InternalScore
 from fuzzly.models.post import PostId, Score
 from kh_common.auth import KhUser
 from kh_common.config.constants import epoch
@@ -126,17 +127,19 @@ class Scoring(DBI) :
 
 			transaction.commit()
 
-		score: Dict[str, int] = {
-			'up': up,
-			'down': down,
-			'total': total,
-		}
-		ScoreCache.put(post_id, score)
+		score: InternalScore = InternalScore(
+			up = up,
+			down = down,
+			total = total,
+		)
+		ensure_future(ScoreCache.put_async(post_id, score))
 
 		user_vote = 0 if upvote is None else (1 if upvote else -1)
 		ensure_future(VoteCache.put_async(f'{user.user_id}|{post_id}', user_vote))
 
 		return Score(
-			**score,
+			up = score.up,
+			down = score.down,
+			total = score.total,
 			user_vote = user_vote,
 		)
