@@ -661,7 +661,6 @@ class Uploader(SqlInterface, B2Interface) :
 			WHERE users.user_id = %s;
 			""",
 			(post_id.int(), user.user_id),
-			fetch_one=True,
 			commit=True,
 		)
 
@@ -718,7 +717,6 @@ class Uploader(SqlInterface, B2Interface) :
 			WHERE users.user_id = %s;
 			""",
 			(post_id.int(), user.user_id),
-			fetch_one=True,
 			commit=True,
 		)
 
