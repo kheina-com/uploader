@@ -78,7 +78,7 @@ class Uploader(SqlInterface, B2Interface) :
 	async def _populate_tag_cache(self, tag: str) -> None :
 		if not await CountKVS.exists_async(tag) :
 			# we gotta populate it here (sad)
-			data = self.query("""
+			data = await self.query_async("""
 				SELECT COUNT(1)
 				FROM kheina.public.tags
 					INNER JOIN kheina.public.tag_post
@@ -99,27 +99,94 @@ class Uploader(SqlInterface, B2Interface) :
 		return await CountKVS.get_async(tag)
 
 
-	async def _increment_tag_count(self, tag: str) -> None :
+	async def _increment_total_post_count(self, value: int = 1) -> None :
+		if not await CountKVS.exists_async('_') :
+			# we gotta populate it here (sad)
+			data = await self.query_async("""
+				SELECT COUNT(1)
+				FROM kheina.public.posts
+				WHERE posts.privacy_id = privacy_to_id('public');
+				""",
+				fetch_one=True,
+			)
+			await CountKVS.put_async('_', int(data[0]) + value, -1)
+
+		else :
+			KeyValueStore._client.increment(
+				(CountKVS._namespace, CountKVS._set, '_'),
+				'data',
+				value,
+				meta={
+					'ttl': -1,
+				},
+				policy={
+					'max_retries': 3,
+				},
+			)
+
+
+	async def _increment_user_count(self, user_id: int, value: int = 1) -> None :
+		if not await CountKVS.exists_async(f'@{user_id}') :
+			# we gotta populate it here (sad)
+			data = await self.query_async("""
+				SELECT COUNT(1)
+				FROM kheina.public.posts
+				WHERE posts.uploader = %s
+					AND posts.privacy_id = privacy_to_id('public');
+				""",
+				(user_id,),
+				fetch_one=True,
+			)
+			await CountKVS.put_async('_', int(data[0]) + value, -1)
+
+		else :
+			KeyValueStore._client.increment(
+				(CountKVS._namespace, CountKVS._set, f'@{user_id}'),
+				'data',
+				value,
+				meta={
+					'ttl': -1,
+				},
+				policy={
+					'max_retries': 3,
+				},
+			)
+
+
+	async def _increment_rating_count(self, rating: Rating, value: int = 1) -> None :
+		if not await CountKVS.exists_async(rating.name) :
+			# we gotta populate it here (sad)
+			data = await self.query_async("""
+				SELECT COUNT(1)
+				FROM kheina.public.posts
+				WHERE posts.rating = rating_to_id(%s)
+					AND posts.privacy_id = privacy_to_id('public');
+				""",
+				(rating,),
+				fetch_one=True,
+			)
+			await CountKVS.put_async('_', int(data[0]) + value, -1)
+
+		else :
+			KeyValueStore._client.increment(
+				(CountKVS._namespace, CountKVS._set, rating.name),
+				'data',
+				value,
+				meta={
+					'ttl': -1,
+				},
+				policy={
+					'max_retries': 3,
+				},
+			)
+
+
+	async def _increment_tag_count(self, tag: str, value: int = 1) -> None :
 		await self._populate_tag_cache(tag)
 		KeyValueStore._client.increment(
 			(CountKVS._namespace, CountKVS._set, tag),
 			'data',
-			1,
-			meta={
-				'ttl': -1,
-			},
-			policy={
-				'max_retries': 3,
-			},
-		)
-
-
-	async def _decrement_tag_count(self, tag: str) -> None :
-		await self._populate_tag_cache(tag)
-		KeyValueStore._client.increment(
-			(CountKVS._namespace, CountKVS._set, tag),
-			'data',
-			1,
+			value,
 			meta={
 				'ttl': -1,
 			},
@@ -589,12 +656,16 @@ class Uploader(SqlInterface, B2Interface) :
 				tags: TagGroups = await tags_task
 
 				if privacy == Privacy.public :
+					ensure_future(self._increment_total_post_count(1))
+					ensure_future(self._increment_user_count(user.user_id, 1))
 					for tag in filter(None, flatten(tags)) :
-						ensure_future(self._increment_tag_count(tag))
+						ensure_future(self._increment_tag_count(tag, 1))
 
 				elif old_privacy == Privacy.public :
+					ensure_future(self._increment_total_post_count(-1))
+					ensure_future(self._increment_user_count(user.user_id, -1))
 					for tag in filter(None, flatten(tags)) :
-						ensure_future(self._decrement_tag_count(tag))
+						ensure_future(self._increment_tag_count(tag, -1))
 
 			except ClientResponseError as e :
 				if e.status == 404 :
