@@ -683,10 +683,9 @@ class Uploader(SqlInterface, B2Interface) :
 	async def updatePrivacy(self: 'Uploader', user: KhUser, post_id: PostId, privacy: Privacy) :
 		await self._update_privacy(user, post_id, privacy)
 
-		post: Optional[InternalPost] = await self.kvs_get(post_id)
-		if post :
-			post.privacy = privacy
-			KVS.put(post_id, post)
+		if await KVS.exists_async(post_id) :
+			# we need the created and updated values set by db, so just remove
+			ensure_future(KVS.remove_async(post_id))
 
 
 	@HttpErrorHandler('setting user icon')
