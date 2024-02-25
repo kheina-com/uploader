@@ -2,10 +2,10 @@ from typing import Dict, List, Optional, Union
 
 from fastapi import File, Form, UploadFile
 from fastapi.responses import UJSONResponse
-from fuzzly.models.post import PostId
 from kh_common.server import NoContentResponse, Request, ServerApp
-
 from models import CreateRequest, IconRequest, PrivacyRequest, UpdateRequest
+
+from fuzzly.models.post import PostId
 from uploader import Uploader
 
 

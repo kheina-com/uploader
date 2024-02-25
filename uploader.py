@@ -2,21 +2,17 @@ from asyncio import Task, ensure_future
 from datetime import datetime
 from enum import Enum
 from io import BytesIO
-from math import floor
 from os import makedirs, path, remove
 from secrets import token_bytes
 from time import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from urllib.parse import quote
 from uuid import UUID, uuid4
+from subprocess import PIPE, Popen
 
 import aerospike
 from aiohttp import ClientResponseError, request
 from exiftool import ExifTool
-from fuzzly.internal import InternalClient
-from fuzzly.models.internal import InternalPost, InternalUser, UserKVS
-from fuzzly.models.post import MediaType, Post, PostId, PostSize, Privacy, Rating
-from fuzzly.models.tag import TagGroups
 from kh_common.auth import KhUser
 from kh_common.backblaze import B2Interface
 from kh_common.caching.key_value_store import KeyValueStore
@@ -24,12 +20,17 @@ from kh_common.config.credentials import fuzzly_client_token
 from kh_common.exceptions.http_error import BadGateway, BadRequest, Forbidden, HttpErrorHandler, InternalServerError, NotFound
 from kh_common.sql import SqlInterface, Transaction
 from kh_common.utilities import flatten, int_from_bytes
-from wand.image import Image
-
 from models import Coordinates
 from scoring import confidence
 from scoring import controversial as calc_cont
 from scoring import hot as calc_hot
+from wand.image import Image
+from kh_common.base64 import b64decode, b64encode
+
+from fuzzly.internal import InternalClient
+from fuzzly.models.internal import InternalPost, InternalUser, UserKVS, VoteCache
+from fuzzly.models.post import MediaType, Post, PostId, PostSize, Privacy, Rating
+from fuzzly.models.tag import TagGroups
 
 
 KVS: KeyValueStore = KeyValueStore('kheina', 'posts')
@@ -341,10 +342,27 @@ class Uploader(SqlInterface, B2Interface) :
 		ratio = size / image.size[long_side]
 
 		if ratio < 1 :
-			output_size = (floor(image.size[0] * ratio), size) if long_side else (size, floor(image.size[1] * ratio))
+			output_size = (round(image.size[0] * ratio), size) if long_side else (size, round(image.size[1] * ratio))
 			image.resize(width=output_size[0], height=output_size[1], filter=self.filter_function)
 
 		return image
+
+
+	def thumbhash(self: 'Uploader', image: Image) -> bytes :
+		long_side = 0 if image.size[0] > image.size[1] else 1
+		size = 100
+		ratio = size / image.size[long_side]
+
+		if ratio < 1 :
+			output_size = (round(image.size[0] * ratio), size) if long_side else (size, round(image.size[1] * ratio))
+			image.resize(width=output_size[0], height=output_size[1], filter='point')
+
+		hash, err = Popen(['thumbhash', 'encode-image'], stdin=PIPE, stdout=PIPE, stderr=PIPE).communicate(self.get_image_data(image))
+
+		if err :
+			raise InternalServerError(f'Failed to generate image thumbhash: {err.decode()}.')
+
+		return b64decode(hash.strip(b'\n\r= ')).rstrip(b'\x00')
 
 
 	def get_image_data(self: 'Uploader', image: Image, compress: bool = True) -> bytes :
@@ -398,6 +416,10 @@ class Uploader(SqlInterface, B2Interface) :
 			if dot_index and filename[dot_index + 1:].lower() in self.mime_types :
 				filename = filename[:dot_index] + '-web' + filename[dot_index:]
 
+		# thumbhash
+		with Image(file=open(file_on_disk, 'rb')) as image :
+			thumbhash = self.thumbhash(image)
+
 		try :
 			with self.transaction() as transaction :
 				data: List[str] = transaction.query("""
@@ -428,16 +450,17 @@ class Uploader(SqlInterface, B2Interface) :
 								media_type_id = media_mime_type_to_id(%s),
 								filename = %s,
 								width = %s,
-								height = %s
+								height = %s,
+								thumbhash = %s
 						WHERE posts.post_id = %s
 							AND posts.uploader = %s
 						RETURNING posts.updated_on;
-						""",
-						(
+						""", (
 							content_type,
 							filename,
 							image.size[0],
 							image.size[1],
+							thumbhash,
 							post_id.int(),
 							user.user_id,
 						),
@@ -498,6 +521,8 @@ class Uploader(SqlInterface, B2Interface) :
 				)
 				post.size = image_size
 				post.filename = filename
+				post.thumbhash = thumbhash
+
 				KVS.put(post_id, post)
 
 			return {
@@ -569,7 +594,7 @@ class Uploader(SqlInterface, B2Interface) :
 			# post is populated in cache, so we can safely update it
 
 			if privacy :
-				post.privacy = privacy
+				post.privacy = privacythumbhash
 
 			post = InternalPost.parse_obj({
 				**post.dict(),
@@ -610,6 +635,7 @@ class Uploader(SqlInterface, B2Interface) :
 				raise BadRequest('only unpublished posts can be marked as drafts.')
 
 			tags_task: Task[TagGroups] = client.post_tags(post_id)
+			vote_task: Task = None
 
 			if old_privacy in UnpublishedPrivacies and privacy not in UnpublishedPrivacies :
 				query = """
@@ -637,6 +663,7 @@ class Uploader(SqlInterface, B2Interface) :
 					post_id.int(), 1, 0, 1, calc_hot(1, 0, time()), confidence(1, 1), calc_cont(1, 0),
 					privacy.name, user.user_id, post_id.int(),
 				)
+				vote_task = VoteCache.put_async(f'{user.user_id}|{post_id}', 1)
 
 			else :
 				query = """
@@ -650,7 +677,7 @@ class Uploader(SqlInterface, B2Interface) :
 					privacy.name, user.user_id, post_id.int(),
 				)
 
-			t.query(query, params)
+			await t.query_async(query, params)
 
 			try :
 				tags: TagGroups = await tags_task
@@ -675,6 +702,9 @@ class Uploader(SqlInterface, B2Interface) :
 
 			if commit :
 				t.commit()
+
+			if vote_task :
+				await vote_task
 
 		return True
 
@@ -797,3 +827,12 @@ class Uploader(SqlInterface, B2Interface) :
 
 		iuser.banner = post_id
 		ensure_future(UserKVS.put_async(str(iuser.user_id), iuser))
+
+
+	@HttpErrorHandler('removing post')
+	async def deletePost(self: 'Uploader', user: KhUser, post_id: PostId) -> None :
+		ipost: InternalPost = await client.post(post_id)
+
+		if ipost.user_id != user.user_id :
+			raise NotFound('the provided post does not exist or it does not belong to this account.')
+

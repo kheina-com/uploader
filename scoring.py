@@ -2,13 +2,14 @@ from asyncio import ensure_future
 from math import log10, sqrt
 from typing import Optional, Union
 
-from fuzzly.models._database import DBI, ScoreCache, VoteCache
-from fuzzly.models.internal import InternalScore
-from fuzzly.models.post import PostId, Score
 from kh_common.auth import KhUser
 from kh_common.config.constants import epoch
 from kh_common.exceptions.http_error import BadRequest
 from scipy.stats import norm
+
+from fuzzly.models._database import DBI, ScoreCache, VoteCache
+from fuzzly.models.internal import InternalScore
+from fuzzly.models.post import PostId, Score
 
 
 """

@@ -8,7 +8,13 @@ perl Makefile.PL
 make test
 sudo make install
 sudo yum install ImageMagick-devel
-sudo pip3 install -r requirements.txt
+sudo python3 -m pip install -r requirements.txt
+curl https://dl.google.com/go/go1.21.7.linux-amd64.tar.gz -o golang.tar.gz
+sudo tar -C /usr/local -xf golang.tar.gz
+export PATH=$PATH:/usr/local/go/bin
+export GOPATH=$HOME/go
+export PATH=$PATH:$GOPATH/bin
+go install github.com/kheina-com/go-thumbhash/cmd/thumbhash@1efbb9d
 ```
 
 ## requires

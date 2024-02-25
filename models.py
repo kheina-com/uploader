@@ -1,7 +1,8 @@
 from typing import Optional
 
-from fuzzly.models.post import PostId, PostIdValidator, Privacy, Rating
 from pydantic import BaseModel, validator
+
+from fuzzly.models.post import PostId, PostIdValidator, Privacy, Rating
 
 
 class UpdateRequest(BaseModel) :
